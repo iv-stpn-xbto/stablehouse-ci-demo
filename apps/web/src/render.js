@@ -6,7 +6,7 @@ export function renderPage(environment = "demo") {
   <head><meta charset="utf-8"><title>Stablehouse Web</title></head>
   <body>
     <main>
-      <h1>Stablehouse Web</h1>
+      <h1>Stablehouse Web (updated)</h1>
       <p>Environment: ${formatEnvironment(environment)}</p>
     </main>
   </body>
