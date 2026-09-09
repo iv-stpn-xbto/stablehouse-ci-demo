@@ -60,18 +60,26 @@ created. Release branches are ephemeral and version-only.
 
 ## Author changes
 
-For app-only work, run `yarn changeset` and use one app target per file:
+For app-only work:
+
+```bash
+yarn changeset                 # patch (default)
+yarn changeset:minor           # minor
+yarn changeset:major           # major
+yarn changeset -m "Summary"    # skip the summary prompt
+yarn changeset web             # force the package if git inference is unclear
+```
+
+The command infers `web` and/or `backoffice` from your diff vs `develop` and
+writes **one file per app**. It never opens the stock major/minor/patch wizard.
 
 ```md
 ---
-"web": minor
+"web": patch
 ---
 
-Add the account summary.
+Update the web heading.
 ```
-
-Do not combine web and backoffice in one changeset file. Separate files allow
-one app's release PR to consume its entry without consuming the other app's.
 
 ### Common changes
 

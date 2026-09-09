@@ -12,6 +12,11 @@ import {
   generatedChangeset,
   generatedFileName,
 } from "../scripts/common-changesets.mjs";
+import {
+  appsFromChangedPaths,
+  changesetMarkdown,
+  parseAddArgs,
+} from "../scripts/add-changeset.mjs";
 import { renderPage as renderWeb } from "../apps/web/src/render.js";
 import { renderPage as renderBackoffice } from "../apps/backoffice/src/render.js";
 
@@ -21,6 +26,31 @@ ${Object.entries(targets).map(([name, type]) => `"${name}": ${type}`).join("\n")
 
 Demo change
 `;
+
+test("changeset CLI defaults parse as patch and accepts explicit apps", () => {
+  assert.deepEqual(parseAddArgs(["patch"]), { bump: "patch", apps: [], summary: undefined });
+  assert.deepEqual(parseAddArgs(["minor", "web", "-m", "Add heading"]), {
+    bump: "minor",
+    apps: ["web"],
+    summary: "Add heading",
+  });
+});
+
+test("changeset inference uses app paths and ignores common-only diffs", () => {
+  assert.deepEqual(appsFromChangedPaths(["apps/web/src/render.js"]), {
+    apps: ["web"],
+    touchesCommon: false,
+    touchesApp: true,
+  });
+  assert.equal(
+    appsFromChangedPaths(["packages/common/src/index.js"]).touchesCommon,
+    true,
+  );
+});
+
+test("authored changesets are one app per file", () => {
+  assert.match(changesetMarkdown("web", "patch", "Update heading"), /"web": patch/);
+});
 
 test("minimal apps consume the shared utility", () => {
   assert.match(renderWeb(), /Environment: Demo/);

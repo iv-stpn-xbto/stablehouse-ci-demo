@@ -1,7 +1,14 @@
 # Changesets
 
-Run `yarn changeset` in a feature branch and commit the generated Markdown file.
-Use one app target per file so app release PRs can consume changesets independently.
+Run `yarn changeset` in a feature branch. It writes a **patch** file for each
+changed app. Use `yarn changeset:minor` or `yarn changeset:major` for a higher
+bump. Pass `-m "summary"` or answer the single Summary prompt.
+
+```bash
+yarn changeset
+yarn changeset:minor -m "Add the account summary"
+yarn changeset web -m "Web-only fix"
+```
 
 - Changes under `apps/web/**` target `web`.
 - Changes under `apps/backoffice/**` target `backoffice`.
