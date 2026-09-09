@@ -1,12 +1,12 @@
-name: Prepare release
+name: Prepare app releases
 
 on:
   push:
-    branches: [develop]
+    branches: [main]
   workflow_dispatch:
 
 concurrency:
-  group: prepare-release
+  group: prepare-app-releases
   cancel-in-progress: false
 
 permissions:
@@ -16,12 +16,16 @@ permissions:
 jobs:
   version:
     runs-on: ubuntu-latest
+    strategy:
+      max-parallel: 1
+      matrix:
+        app: [web, backoffice]
     steps:
-      - name: Check out develop
+      - name: Check out main
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
-          ref: develop
+          ref: main
 
       - name: Set up Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
@@ -35,26 +39,37 @@ jobs:
       - name: Install dependencies
         run: yarn install --frozen-lockfile
 
-      - name: Restore the stock Changesets branch name
+      - name: Check for pending app changesets
+        id: pending
+        run: node scripts/release-branch.mjs pending "${{ matrix.app }}"
+
+      - name: Restore this app's stock Changesets branch name
+        if: steps.pending.outputs.pending == 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.RELEASE_BOT_TOKEN || github.token }}
-        run: node scripts/release-branch.mjs normalize
+        run: node scripts/release-branch.mjs normalize "${{ matrix.app }}"
 
-      - name: Create or update Version Packages PR
+      - name: Create or update app Version Packages PR
+        if: steps.pending.outputs.pending == 'true'
         id: changesets
         uses: changesets/action@a45c4d594aa4e2c509dc14a9f2b3b67ba3780d0d # v1.9.0
         with:
-          version: yarn changeset:version
+          version: node scripts/version-app.mjs ${{ matrix.app }}
           branch: main
-          commit: "Version Packages"
-          title: "Version Packages"
+          commit: "Version ${{ matrix.app }}"
+          title: "Version ${{ matrix.app }}"
           commitMode: github-api
           createGithubReleases: false
         env:
           GITHUB_TOKEN: ${{ secrets.RELEASE_BOT_TOKEN || github.token }}
 
-      - name: Name the release branch from computed versions
-        if: steps.changesets.outputs.pullRequestNumber != ''
+      - name: Name this app's release branch
+        if: >-
+          steps.pending.outputs.pending == 'true' &&
+          steps.changesets.outputs.pullRequestNumber != ''
         env:
           GITHUB_TOKEN: ${{ secrets.RELEASE_BOT_TOKEN || github.token }}
-        run: node scripts/release-branch.mjs finalize "${{ steps.changesets.outputs.pullRequestNumber }}"
+        run: >-
+          node scripts/release-branch.mjs finalize
+          "${{ matrix.app }}"
+          "${{ steps.changesets.outputs.pullRequestNumber }}"

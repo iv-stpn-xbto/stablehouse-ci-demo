@@ -14,29 +14,54 @@ permissions:
   pull-requests: write
 
 jobs:
-  backmerge:
+  complete-release:
     if: >-
       github.event.pull_request.merged == true &&
       startsWith(github.event.pull_request.head.ref, 'release/')
     runs-on: ubuntu-latest
+    outputs:
+      app: ${{ steps.complete.outputs.app }}
+      version: ${{ steps.complete.outputs.version }}
+      tag: ${{ steps.complete.outputs.tag }}
+    env:
+      HEAD_BRANCH: ${{ github.event.pull_request.head.ref }}
+      MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+    steps:
+      - name: Check out merged main
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
+          persist-credentials: false
+
+      - name: Tag app release and delete ephemeral branch
+        id: complete
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_BOT_TOKEN || github.token }}
+        run: node scripts/complete-release.mjs
+
+  record-web-deployment:
+    needs: complete-release
+    if: needs.complete-release.outputs.app == 'web'
+    runs-on: ubuntu-latest
+    environment: production-web
+    steps:
+      - run: echo "Recorded ${{ needs.complete-release.outputs.tag }} as the web deployment."
+
+  record-backoffice-deployment:
+    needs: complete-release
+    if: needs.complete-release.outputs.app == 'backoffice'
+    runs-on: ubuntu-latest
+    environment: production-backoffice
+    steps:
+      - run: echo "Recorded ${{ needs.complete-release.outputs.tag }} as the backoffice deployment."
+
+  backmerge:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ secrets.RELEASE_BOT_TOKEN || github.token }}
-      HEAD_BRANCH: ${{ github.event.pull_request.head.ref }}
       MERGED_PR: ${{ github.event.pull_request.number }}
     steps:
-      - name: Validate release branch
-        run: |
-          if [[ ! "$HEAD_BRANCH" =~ ^release/[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
-            echo "::error::Refusing to process an invalid release branch."
-            exit 1
-          fi
-
-      - name: Delete ephemeral release branch
-        run: |
-          gh api --method DELETE \
-            "repos/${GITHUB_REPOSITORY}/git/refs/heads/${HEAD_BRANCH}" \
-            || echo "::warning::Release branch was already deleted."
-
       - name: Create or update main to develop backmerge
         id: backmerge
         run: |
@@ -60,7 +85,7 @@ jobs:
               --base develop \
               --head main \
               --title "Backmerge main into develop" \
-              --body "Automated backmerge after release PR #${MERGED_PR}. This PR carries the production merge commit and version updates back to develop.")"
+              --body "Automated backmerge after main PR #${MERGED_PR}. This PR carries promotion/release merge commits and version updates back to develop.")"
           fi
 
           echo "url=$backmerge_url" >> "$GITHUB_OUTPUT"

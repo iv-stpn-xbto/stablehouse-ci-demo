@@ -1,8 +1,17 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { changesetTargets, missingTargets, requiredPackagesForPaths } from "../scripts/check-changeset-scope.mjs";
-import { selectTrainVersion } from "../scripts/release-policy.mjs";
+import {
+  changesetTargets,
+  missingTargets,
+  requiredPackagesForPaths,
+  validationErrors,
+} from "../scripts/check-changeset-scope.mjs";
+import { appFromReleaseBranch, releaseBranch } from "../scripts/release-policy.mjs";
+import {
+  generatedChangeset,
+  generatedFileName,
+} from "../scripts/common-changesets.mjs";
 import { renderPage as renderWeb } from "../apps/web/src/render.js";
 import { renderPage as renderBackoffice } from "../apps/backoffice/src/render.js";
 
@@ -35,41 +44,61 @@ test("backoffice-only code requires only backoffice", () => {
 });
 
 test("common code requires both consumers", () => {
+  const entries = ["web", "backoffice"].map((app) => ({
+    path: generatedFileName(42, app),
+    contents: generatedChangeset(app, "Improve shared formatting"),
+  }));
   assert.deepEqual(
-    missingTargets(["packages/common/src/index.js"], [changeset({ web: "patch" })]),
-    ["backoffice"],
-  );
-  assert.deepEqual(
-    missingTargets(
-      ["packages/common/src/index.js"],
-      [changeset({ web: "minor", backoffice: "minor" })],
-    ),
+    validationErrors(["packages/common/src/index.js"], entries, 42),
     [],
   );
+});
+
+test("common validation requires deterministic generated files", () => {
+  assert.deepEqual(
+    validationErrors(
+      ["packages/common/src/index.js"],
+      [{ path: ".changeset/manual.md", contents: changeset({ web: "patch" }) }],
+      42,
+    ),
+    [
+      "Changed versioned code is missing changeset targets: backoffice",
+      ".changeset/common-pr-42-web.md must contain a generated web: patch release",
+      ".changeset/common-pr-42-backoffice.md must contain a generated backoffice: patch release",
+    ],
+  );
+});
+
+test("changesets cannot target common or multiple apps", () => {
+  const entries = [
+    {
+      path: ".changeset/invalid.md",
+      contents: changeset({ web: "minor", backoffice: "patch", common: "patch" }),
+    },
+  ];
+  assert.deepEqual(validationErrors([], entries, 1), [
+    ".changeset/invalid.md must not version common",
+    ".changeset/invalid.md targets multiple apps; use one changeset file per app",
+  ]);
 });
 
 test("invalid changeset frontmatter does not satisfy the gate", () => {
   assert.deepEqual([...changesetTargets("---\nweb: banana\n---\n")], []);
 });
 
-test("web version is the train id when both apps change", () => {
+test("release branches are app-scoped", () => {
+  assert.equal(releaseBranch("web", "2.0.0"), "release/web/2.0.0");
   assert.equal(
-    selectTrainVersion(
-      new Set(["apps/web/package.json", "apps/backoffice/package.json"]),
-      { web: "2.0.0", backoffice: "1.4.0" },
-    ),
-    "2.0.0",
+    releaseBranch("backoffice", "1.4.0"),
+    "release/backoffice/1.4.0",
   );
 });
 
-test("backoffice version is the train id for a backoffice-only release", () => {
-  assert.equal(
-    selectTrainVersion(
-      new Set(["apps/backoffice/package.json"]),
-      { web: "2.0.0", backoffice: "1.4.0" },
-    ),
-    "1.4.0",
-  );
+test("release branches parse app and version", () => {
+  assert.deepEqual(appFromReleaseBranch("release/web/2.1.0"), {
+    app: "web",
+    version: "2.1.0",
+  });
 });
 
 test("workspace manifests remain private", async () => {
@@ -81,4 +110,6 @@ test("workspace manifests remain private", async () => {
     const manifest = JSON.parse(await readFile(path, "utf8"));
     assert.equal(manifest.private, true, `${path} must not publish to npm`);
   }
+  const common = JSON.parse(await readFile("packages/common/package.json", "utf8"));
+  assert.equal(common.version, "0.0.0");
 });

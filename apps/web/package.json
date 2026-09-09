@@ -7,6 +7,6 @@
     "build": "node ../../scripts/build-app.mjs web"
   },
   "dependencies": {
-    "common": "1.0.0"
+    "common": "0.0.0"
   }
 }
