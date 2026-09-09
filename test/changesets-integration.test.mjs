@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -11,7 +11,7 @@ async function writeJson(path, value) {
   await writeFile(path, `${JSON.stringify(value, null, 2)}\n`, "utf8");
 }
 
-async function versionFixture(targets) {
+async function versionFixture(changesets, ignoredApp) {
   const root = await mkdtemp(join(tmpdir(), "stablehouse-changesets-"));
   await Promise.all([
     mkdir(join(root, ".changeset"), { recursive: true }),
@@ -44,18 +44,24 @@ async function versionFixture(targets) {
     access: "restricted",
     baseBranch: "develop",
     updateInternalDependencies: "patch",
-    ignore: ["common"],
+    ignore: [],
     privatePackages: { version: true, tag: false },
   });
-  await writeFile(
-    join(root, ".changeset/demo.md"),
-    `---\n${Object.entries(targets)
-      .map(([name, type]) => `"${name}": ${type}`)
-      .join("\n")}\n---\n\nFixture release\n`,
-    "utf8",
+  await Promise.all(
+    Object.entries(changesets).map(([name, targets]) =>
+      writeFile(
+        join(root, `.changeset/${name}.md`),
+        `---\n${Object.entries(targets)
+          .map(([packageName, type]) => `"${packageName}": ${type}`)
+          .join("\n")}\n---\n\nFixture release\n`,
+        "utf8",
+      ),
+    ),
   );
 
-  const result = spawnSync(process.execPath, [changesetsCli, "version"], {
+  const args = [changesetsCli, "version"];
+  if (ignoredApp) args.push("--ignore", ignoredApp);
+  const result = spawnSync(process.execPath, args, {
     cwd: root,
     encoding: "utf8",
   });
@@ -71,31 +77,62 @@ async function versionFixture(targets) {
       await readFile(join(root, path, "package.json"), "utf8"),
     ).version;
   }
-  await assert.rejects(readFile(join(root, ".changeset/demo.md"), "utf8"));
+  const remainingChangesets = (await readdir(join(root, ".changeset")))
+    .filter((name) => name.endsWith(".md"))
+    .sort();
   await rm(root, { recursive: true, force: true });
-  return versions;
+  return { versions, remainingChangesets };
 }
 
 test("Changesets versions web independently", async () => {
-  assert.deepEqual(await versionFixture({ web: "patch" }), {
-    web: "1.0.1",
-    backoffice: "1.0.0",
-    common: "1.0.0",
+  assert.deepEqual(await versionFixture({ web: { web: "patch" } }), {
+    versions: {
+      web: "1.0.1",
+      backoffice: "1.0.0",
+      common: "1.0.0",
+    },
+    remainingChangesets: [],
   });
 });
 
 test("Changesets versions backoffice independently", async () => {
-  assert.deepEqual(await versionFixture({ backoffice: "minor" }), {
-    web: "1.0.0",
-    backoffice: "1.1.0",
-    common: "1.0.0",
+  assert.deepEqual(await versionFixture({ backoffice: { backoffice: "minor" } }), {
+    versions: {
+      web: "1.0.0",
+      backoffice: "1.1.0",
+      common: "1.0.0",
+    },
+    remainingChangesets: [],
   });
 });
 
-test("a shared changeset versions both app consumers", async () => {
-  assert.deepEqual(await versionFixture({ web: "minor", backoffice: "patch" }), {
-    web: "1.1.0",
-    backoffice: "1.0.1",
-    common: "1.0.0",
+test("a web release leaves the backoffice common changeset pending", async () => {
+  assert.deepEqual(
+    await versionFixture(
+      {
+        "common-web": { web: "patch" },
+        "common-backoffice": { backoffice: "patch" },
+      },
+      "backoffice",
+    ),
+    {
+      versions: {
+        web: "1.0.1",
+        backoffice: "1.0.0",
+        common: "1.0.0",
+      },
+      remainingChangesets: ["common-backoffice.md"],
+    },
+  );
+});
+
+test("common stays unversioned during each app release", async () => {
+  assert.deepEqual(await versionFixture({ web: { web: "minor" } }, "backoffice"), {
+    versions: {
+      web: "1.1.0",
+      backoffice: "1.0.0",
+      common: "1.0.0",
+    },
+    remainingChangesets: [],
   });
 });

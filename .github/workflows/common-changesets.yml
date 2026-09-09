@@ -1,0 +1,31 @@
+name: Common consumer changesets
+
+on:
+  pull_request_target:
+    branches: [develop]
+    types: [opened, synchronize, reopened, edited]
+
+concurrency:
+  group: common-changesets-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out trusted base scripts
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+
+      - name: Generate consumer changesets through the API
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_BOT_TOKEN || github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: node scripts/common-changesets.mjs

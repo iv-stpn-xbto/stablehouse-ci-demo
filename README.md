@@ -1,145 +1,169 @@
-# Stablehouse Changesets CI demo
+# Stablehouse per-app release CI demo
 
-This repository is a minimal end-to-end implementation of
-[SHF-122](https://linear.app/xbtohub/issue/SHF-122/spec-changesets-on-develop-auto-releaseversion-main-backmerge).
-It substitutes `backoffice` for the spec's second (`mobile`) app.
+This repository demonstrates the revised
+[SHF-122](https://linear.app/xbtohub/issue/SHF-122/spec-per-app-changesets-releases-from-main-with-develop-promotion)
+flow. The production spec uses `web` and `mobile`; this small demo substitutes
+`backoffice` for `mobile`.
 
 ## Workspace
 
-- `apps/web` — private, independently versioned static web app.
-- `apps/backoffice` — private, independently versioned static backoffice app.
-- `packages/common` — shared utility consumed by both apps; not released itself.
+- `apps/web` — private, independently versioned app.
+- `apps/backoffice` — private, independently versioned app.
+- `packages/common` — shared source used by both apps, never versioned or released.
 
-All packages are private. Releases update versions and changelogs only; nothing
-is published to npm.
+`common` has the package-manager placeholder version `0.0.0`. CI rejects
+changesets targeting it. All packages are private and nothing publishes to npm.
 
 ```bash
 corepack enable
-yarn install
+yarn install --frozen-lockfile
 yarn build
 yarn test
 ```
 
-The builds produce `apps/web/dist/index.html` and
-`apps/backoffice/dist/index.html`.
+## What main means
 
-## Branch topology
+`main` contains tested code that is **eligible** to release. It does not claim
+that every app is currently running that code.
 
-Only `develop` and `main` are permanent:
+Actual production state is app-specific:
+
+- `web@<version>` plus the `production-web` GitHub Environment.
+- `backoffice@<version>` plus the `production-backoffice` Environment.
+
+The Release status workflow shows each app's version on `main`, latest tag,
+pending changesets, and app/shared files changed since that tag. This makes
+“merged but not released for this app” visible.
+
+## Branch and PR flow
+
+Only `develop` and `main` are permanent branches.
 
 ```text
-feature + changeset -> develop
-                         |
-                         v
-                 release/<version>
-                         |
-                         v
-                        main
-                         |
-                         +---- backmerge PR ----> develop
+feature PR (+ app changeset)
+        │
+        │ common code => CI adds one patch changeset per consumer
+        ▼
+     develop
+        │
+        │ Promote develop to main PR
+        ▼
+       main (eligible)
+        ├── release/web/<version> ──────> web@<version>
+        └── release/backoffice/<version> -> backoffice@<version>
+                                               │
+                 main -> develop backmerge PR <─┘
 ```
 
-`develop` is the integration branch and default feature PR base. `main` is
-production. A `release/<version>` branch exists only while its Version Packages
-PR is open and is deleted after merge.
+The promote PR uses `develop` directly as its head; no `promote/*` branch is
+created. Release branches are ephemeral and version-only.
 
-`master`, manually dated release branches, and standing hotfix branches are not
-part of this flow.
+## Author changes
 
-## Author a change
-
-Make the code change and run:
+For app-only work:
 
 ```bash
-yarn changeset
+yarn changeset                 # patch (default)
+yarn changeset:minor           # minor
+yarn changeset:major           # major
+yarn changeset -m "Summary"    # skip the summary prompt
+yarn changeset web             # force the package if git inference is unclear
 ```
 
-Select targets according to the scope:
-
-| Changed code | Required targets |
-| --- | --- |
-| `apps/web/**` | `web` |
-| `apps/backoffice/**` | `backoffice` |
-| `packages/common/**` | `web` and `backoffice` |
-| docs, workflows, repository config | none |
-
-Choose `patch`, `minor`, or `major`; Changesets computes SemVer from those
-entries. The PR gate checks that changesets cover all affected apps. Shared code
-targets both consumers explicitly so a web-only release never bumps backoffice,
-and vice versa.
-
-Example shared changeset:
+The command infers `web` and/or `backoffice` from your diff vs `develop` and
+writes **one file per app**. It never opens the stock major/minor/patch wizard.
 
 ```md
 ---
-"web": minor
-"backoffice": minor
+"web": patch
 ---
 
-Improve the shared environment formatter.
+Update the web heading.
 ```
 
-## Ship a release
+### Common changes
 
-1. Merge feature PRs and their `.changeset/*.md` files into `develop`.
-2. `.github/workflows/release.yml` runs the stock `changesets/action`.
-3. The action versions packages, creates changelogs, consumes changesets, and
-   opens or updates one PR into `main`.
-4. A thin wrapper renames the action's temporary branch to the computed
-   `release/<version>`. If more changesets land, it restores the temporary name,
-   updates the same PR, and renames it to the newly computed version.
-5. Merge the Version Packages PR to ship the `develop` code and matching
-   versions together.
-6. `.github/workflows/backmerge.yml` deletes the release branch and opens a
-   `main` to `develop` PR. It enables auto-merge when the repository permits it.
-   Conflicts leave a visible PR for a human; no workflow force-pushes.
+Do not author a changeset for `common`. The trusted
+`common-changesets.yml` workflow detects `packages/common/**` in PRs to
+`develop` and commits two deterministic entries:
 
-When both apps change, the web version is the train identifier. A
-backoffice-only release uses its version. The PR body always lists both package
-versions.
+- `.changeset/common-pr-<PR>-web.md` containing `web: patch`
+- `.changeset/common-pr-<PR>-backoffice.md` containing `backoffice: patch`
 
-No pending changesets means no release PR. The post-release backmerge therefore
-does not start another release cycle.
+Both use the sanitized PR title in their changelog summary. Reruns update the
+same files rather than duplicating them. If the common change is removed from
+the PR, CI removes the generated entries.
+
+The automation uses `pull_request_target` only to execute scripts from the
+trusted base SHA. It never checks out or executes PR code. It writes only to
+same-repository branches through the GitHub Contents API.
+
+| Changed code | Required behavior |
+| --- | --- |
+| `apps/web/**` | Author one changeset targeting `web` |
+| `apps/backoffice/**` | Author one changeset targeting `backoffice` |
+| `packages/common/**` | CI generates separate patch entries for both apps |
+| Docs/workflows/config only | No app changeset |
+
+The PR gate fails for missing app entries, multi-app changeset files, missing
+generated common entries, or any attempt to version `common`.
+
+## Promote and release
+
+1. Feature PRs merge into `develop`.
+2. `promote.yml` opens or reuses `develop` → `main` as
+   **Promote develop to main**.
+3. Reviewers merge it after normal checks. Code and pending changesets are now
+   eligible, but no app deployment is implied.
+4. On `main`, `release.yml` evaluates web and backoffice separately.
+5. For each app with pending entries, stock `changesets/action` runs
+   `changeset version` while ignoring the other app.
+6. The thin wrapper keeps one PR per app and names it
+   `release/<app>/<computed-version>`. A new computed version renames only that
+   app's branch.
+7. Merge whichever app is ready. The other app's changesets remain pending.
+8. `backmerge.yml` verifies the app/package version, creates
+   `<app>@<version>` at the merge commit, records its production Environment,
+   deletes the ephemeral branch, and opens/reuses `main` → `develop`.
+
+Conflicts remain in visible PRs. No workflow force-pushes through conflicts.
+
+## Why the app release jobs are serialized
+
+`changesets/action` supports one stock temporary branch,
+`changeset-release/main`. It does not natively create separate release lines.
+The matrix processes apps one at a time:
+
+1. Restore that app's named branch to the stock temporary name.
+2. Let the stock action update its PR using app-filtered versioning.
+3. Rename it back to `release/<app>/<version>`.
+
+This preserves Changesets as the version/changelog engine while preventing the
+two jobs from racing over the temporary branch.
 
 ## GitHub setup
 
-Bootstrap and protect the branches after the initial commit:
-
-```bash
-git push -u origin main
-git switch -c develop
-git push -u origin develop
-```
-
 Recommended repository settings:
 
-1. Make `develop` the default branch.
-2. Require the `CI / verify` check on `develop` and `main`.
-3. Require pull requests on both permanent branches.
-4. Enable auto-merge and automatically delete head branches.
-5. Allow GitHub Actions to create pull requests.
-6. Add a fine-grained `RELEASE_BOT_TOKEN` Actions secret with repository
-   contents and pull-request write access.
+1. Keep `develop` as the default branch.
+2. Protect `develop` and `main`; require the `CI / verify` check.
+3. Require PRs for `main`. Allowed happy-path heads are `develop` and
+   `release/<app>/<version>`.
+4. Enable GitHub Actions to create PRs and optionally enable auto-merge.
+5. Add a least-privilege `RELEASE_BOT_TOKEN` with Contents and Pull requests
+   write access.
 
-The workflows fall back to `GITHUB_TOKEN`, but GitHub suppresses some follow-up
-workflow events for changes created with that token. A GitHub App or fine-grained
-bot token is recommended for the fully automatic demo. Never commit the token.
+The workflows fall back to `GITHUB_TOKEN`, but GitHub suppresses follow-up
+workflow events caused by that token. A GitHub App or fine-grained bot token is
+needed for the fully automatic common-changeset and PR chain. Never commit it.
 
-## CI implementation notes
-
-- External Actions are pinned to immutable commit SHAs.
-- The release action runs on `develop` but sets its PR base to `main`.
-- Its release commit is based on the triggering `develop` SHA, so the single PR
-  contains product code and the corresponding generated versions.
-- The wrapper validates repository names, PR numbers, branch names, and SemVer
-  before GitHub writes.
-- Backmerge uses `main` directly as the PR head, preserving the production merge
-  commit without introducing another branch.
-
-Run the local verification suite with:
+## Local verification
 
 ```bash
 yarn install --frozen-lockfile
 yarn build
 yarn test
+node scripts/release-status.mjs
 ```
+
+External GitHub Actions are pinned to immutable commit SHAs.
