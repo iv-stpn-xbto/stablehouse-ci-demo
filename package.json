@@ -1,0 +1,21 @@
+{
+  "name": "stablehouse-ci-demo",
+  "version": "0.0.0",
+  "private": true,
+  "packageManager": "yarn@1.22.22",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "yarn workspace common build && yarn workspace web build && yarn workspace backoffice build",
+    "changeset": "changeset",
+    "changeset:status": "changeset status",
+    "changeset:version": "changeset version",
+    "check:changeset": "node scripts/check-changeset-scope.mjs",
+    "test": "node --test"
+  },
+  "devDependencies": {
+    "@changesets/cli": "2.29.7"
+  }
+}

@@ -1,0 +1,60 @@
+name: Prepare release
+
+on:
+  push:
+    branches: [develop]
+  workflow_dispatch:
+
+concurrency:
+  group: prepare-release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out develop
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          ref: develop
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: yarn
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+
+      - name: Restore the stock Changesets branch name
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_BOT_TOKEN || github.token }}
+        run: node scripts/release-branch.mjs normalize
+
+      - name: Create or update Version Packages PR
+        id: changesets
+        uses: changesets/action@a45c4d594aa4e2c509dc14a9f2b3b67ba3780d0d # v1.9.0
+        with:
+          version: yarn changeset:version
+          branch: main
+          commit: "Version Packages"
+          title: "Version Packages"
+          commitMode: github-api
+          createGithubReleases: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_BOT_TOKEN || github.token }}
+
+      - name: Name the release branch from computed versions
+        if: steps.changesets.outputs.pullRequestNumber != ''
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_BOT_TOKEN || github.token }}
+        run: node scripts/release-branch.mjs finalize "${{ steps.changesets.outputs.pullRequestNumber }}"

@@ -1,0 +1,12 @@
+{
+  "name": "backoffice",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node ../../scripts/build-app.mjs backoffice"
+  },
+  "dependencies": {
+    "common": "1.0.0"
+  }
+}

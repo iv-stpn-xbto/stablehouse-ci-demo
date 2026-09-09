@@ -1,0 +1,75 @@
+name: Backmerge production
+
+on:
+  pull_request:
+    branches: [main]
+    types: [closed]
+
+concurrency:
+  group: backmerge-main-to-develop
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  backmerge:
+    if: >-
+      github.event.pull_request.merged == true &&
+      startsWith(github.event.pull_request.head.ref, 'release/')
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.RELEASE_BOT_TOKEN || github.token }}
+      HEAD_BRANCH: ${{ github.event.pull_request.head.ref }}
+      MERGED_PR: ${{ github.event.pull_request.number }}
+    steps:
+      - name: Validate release branch
+        run: |
+          if [[ ! "$HEAD_BRANCH" =~ ^release/[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Refusing to process an invalid release branch."
+            exit 1
+          fi
+
+      - name: Delete ephemeral release branch
+        run: |
+          gh api --method DELETE \
+            "repos/${GITHUB_REPOSITORY}/git/refs/heads/${HEAD_BRANCH}" \
+            || echo "::warning::Release branch was already deleted."
+
+      - name: Create or update main to develop backmerge
+        id: backmerge
+        run: |
+          ahead_by="$(gh api "repos/${GITHUB_REPOSITORY}/compare/develop...main" --jq '.ahead_by')"
+          if [[ "$ahead_by" == "0" ]]; then
+            echo "main is already contained in develop."
+            exit 0
+          fi
+
+          backmerge_url="$(gh pr list \
+            --repo "$GITHUB_REPOSITORY" \
+            --base develop \
+            --head main \
+            --state open \
+            --json url \
+            --jq '.[0].url')"
+
+          if [[ -z "$backmerge_url" ]]; then
+            backmerge_url="$(gh pr create \
+              --repo "$GITHUB_REPOSITORY" \
+              --base develop \
+              --head main \
+              --title "Backmerge main into develop" \
+              --body "Automated backmerge after release PR #${MERGED_PR}. This PR carries the production merge commit and version updates back to develop.")"
+          fi
+
+          echo "url=$backmerge_url" >> "$GITHUB_OUTPUT"
+
+      - name: Enable automatic merge when conflict-free
+        if: steps.backmerge.outputs.url != ''
+        env:
+          BACKMERGE_URL: ${{ steps.backmerge.outputs.url }}
+        run: |
+          if ! gh pr merge "$BACKMERGE_URL" --merge --auto; then
+            echo "::warning::Automatic merge is unavailable. The backmerge PR remains open for a human to resolve or merge."
+          fi
