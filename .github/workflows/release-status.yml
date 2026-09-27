@@ -17,5 +17,5 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Summarize released and eligible code
+      - name: Summarize release state
         run: node scripts/release-status.mjs

@@ -1,18 +1,15 @@
-const CONSUMERS = Object.freeze(["web", "backoffice"]);
 const COMMON_PREFIX = "packages/common/";
 const REPOSITORY_PATTERN = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 const BRANCH_PATTERN = /^[A-Za-z0-9._/-]+$/;
 
-export function generatedFileName(pullNumber, app) {
+export function generatedFileName(pullNumber) {
   if (!Number.isSafeInteger(pullNumber) || pullNumber < 1) {
     throw new TypeError("Pull request number must be a positive integer");
   }
-  if (!CONSUMERS.includes(app)) throw new TypeError(`Unknown common consumer: ${app}`);
-  return `.changeset/common-pr-${pullNumber}-${app}.md`;
+  return `.changeset/common-pr-${pullNumber}.md`;
 }
 
-export function generatedChangeset(app, title) {
-  if (!CONSUMERS.includes(app)) throw new TypeError(`Unknown common consumer: ${app}`);
+export function generatedChangeset(title) {
   const summary = String(title)
     .replace(/[\u0000-\u001f\u007f]+/g, " ")
     .replace(/\s+/g, " ")
@@ -21,7 +18,7 @@ export function generatedChangeset(app, title) {
   if (!summary) throw new TypeError("Pull request title must contain visible text");
 
   return `---
-"${app}": patch
+"web": patch
 ---
 
 Shared common change: ${summary}
@@ -82,7 +79,7 @@ async function upsert(github, path, branch, content, pullNumber) {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      message: `Add common consumer changeset for PR #${pullNumber}`,
+      message: `Add common web changeset for PR #${pullNumber}`,
       content: encoded,
       branch,
       ...(existing ? { sha: existing.sha } : {}),
@@ -116,7 +113,9 @@ async function main() {
 
   const pull = await github(`/pulls/${pullNumber}`);
   if (pull.head.repo.full_name !== repository) {
-    throw new Error("Common changeset automation only writes to same-repository PR branches");
+    throw new Error(
+      "Common changeset automation only writes to same-repository PR branches",
+    );
   }
   const branch = pull.head.ref;
   if (!BRANCH_PATTERN.test(branch) || branch.startsWith("/") || branch.includes("..")) {
@@ -126,21 +125,15 @@ async function main() {
   const touchesCommon = (await pullFiles(github, pullNumber)).some((file) =>
     file.filename.startsWith(COMMON_PREFIX),
   );
+  const path = generatedFileName(pullNumber);
 
-  for (const app of CONSUMERS) {
-    const path = generatedFileName(pullNumber, app);
-    if (touchesCommon) {
-      await upsert(github, path, branch, generatedChangeset(app, title), pullNumber);
-    } else {
-      await remove(github, path, branch, pullNumber);
-    }
+  if (touchesCommon) {
+    await upsert(github, path, branch, generatedChangeset(title), pullNumber);
+    console.log("Generated web patch changeset for common changes.");
+  } else {
+    await remove(github, path, branch, pullNumber);
+    console.log("No common changes remain; generated changeset is absent.");
   }
-
-  console.log(
-    touchesCommon
-      ? `Generated patch changesets for: ${CONSUMERS.join(", ")}`
-      : "No common changes remain; generated changesets are absent.",
-  );
 }
 
 if (process.argv[1]?.endsWith("common-changesets.mjs")) {

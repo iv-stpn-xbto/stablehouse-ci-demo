@@ -1,4 +1,4 @@
-name: Common consumer changesets
+name: Common web changeset
 
 on:
   pull_request_target:
@@ -23,7 +23,7 @@ jobs:
           ref: ${{ github.event.pull_request.base.sha }}
           persist-credentials: false
 
-      - name: Generate consumer changesets through the API
+      - name: Generate web changeset for common changes
         env:
           GITHUB_TOKEN: ${{ secrets.RELEASE_BOT_TOKEN || github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}

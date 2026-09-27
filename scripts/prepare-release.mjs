@@ -1,0 +1,133 @@
+import { appendFile, readFile, writeFile } from "node:fs/promises";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
+import { resolve } from "node:path";
+import { computeNextVersion, pendingWebBumps } from "./compute-version.mjs";
+import { clearKind, ensureSingleBranch } from "./ensure-single-branch.mjs";
+import { configureBotIdentity, gitOutput, runGit } from "./git.mjs";
+import { createGithubClient, upsertPull } from "./github.mjs";
+import {
+  APP,
+  APP_MANIFEST,
+  BRANCH_KINDS,
+  releaseBranch,
+} from "./release-policy.mjs";
+
+const root = fileURLToPath(new URL("../", import.meta.url));
+
+function treesEqual(left, right) {
+  return (
+    gitOutput(["rev-parse", `${left}^{tree}`]) ===
+    gitOutput(["rev-parse", `${right}^{tree}`])
+  );
+}
+
+async function applyVersion(plan) {
+  if (plan.source === "changesets") {
+    const cli = resolve(root, "node_modules/@changesets/cli/bin.js");
+    const result = spawnSync(process.execPath, [cli, "version"], {
+      cwd: root,
+      stdio: "inherit",
+    });
+    if (result.status !== 0) {
+      throw new Error("changeset version failed");
+    }
+    return;
+  }
+
+  const manifest = JSON.parse(await readFile(APP_MANIFEST, "utf8"));
+  manifest.version = plan.version;
+  await writeFile(APP_MANIFEST, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+}
+
+async function commitRelease(plan) {
+  runGit(["add", "-A"]);
+  const staged = gitOutput(["diff", "--cached", "--name-only"], {
+    allowFailure: true,
+  });
+  if (!staged) {
+    console.log("No version commit required.");
+    return;
+  }
+  runGit(["commit", "-m", `Version ${APP} ${plan.version}`]);
+}
+
+async function prepareRelease() {
+  configureBotIdentity();
+  runGit(["fetch", "origin", "main", "develop", "--prune"]);
+
+  const bumps = await (async () => {
+    runGit(["checkout", "--force", "origin/develop"]);
+    return pendingWebBumps();
+  })();
+
+  const hasTreeDiff = !treesEqual("origin/main", "origin/develop");
+  if (!hasTreeDiff && bumps.size === 0) {
+    console.log("develop matches main and has no pending changesets; clearing release branch.");
+    await clearKind(BRANCH_KINDS.release, { base: "main" });
+    if (process.env.GITHUB_OUTPUT) {
+      await appendFile(process.env.GITHUB_OUTPUT, "skipped=true\n", "utf8");
+    }
+    return;
+  }
+
+  // Build release from latest main, then bring develop in (rebase-equivalent).
+  runGit(["checkout", "--force", "-B", "release-work", "origin/main"]);
+  const merge = runGit(["merge", "--no-edit", "origin/develop"], {
+    allowFailure: true,
+  });
+  if (merge.status !== 0) {
+    runGit(["merge", "--abort"], { allowFailure: true });
+    throw new Error(
+      "Could not merge develop into main for the release branch. Resolve conflicts in a develop→main integration branch first.",
+    );
+  }
+
+  const plan = await computeNextVersion({ hasCommitDiffs: true });
+
+  await applyVersion(plan);
+  await commitRelease(plan);
+
+  const branch = releaseBranch(plan.version);
+  runGit(["branch", "-f", branch, "HEAD"]);
+  runGit(["push", "--force", "origin", `HEAD:refs/heads/${branch}`]);
+
+  await ensureSingleBranch(BRANCH_KINDS.release, branch, { base: "main" });
+
+  const { owner, github } = createGithubClient();
+  const body = [
+    "<!-- stablehouse-release-summary:start -->",
+    "## Release",
+    "",
+    `- Version: \`${plan.version}\``,
+    `- Branch: \`${branch}\``,
+    `- Version source: \`${plan.source}\``,
+    "",
+    "Built from latest `main` with `develop` merged in, then versioned.",
+    "This branch is force-updated when `develop` or `main` moves so it stays rebased on the latest integration.",
+    "<!-- stablehouse-release-summary:end -->",
+  ].join("\n");
+
+  const pull = await upsertPull(github, owner, {
+    title: `Release ${plan.version}`,
+    head: branch,
+    base: "main",
+    body,
+  });
+
+  console.log(`Release branch ${branch} ready: ${pull.html_url}`);
+  if (process.env.GITHUB_OUTPUT) {
+    await appendFile(
+      process.env.GITHUB_OUTPUT,
+      `skipped=false\nversion=${plan.version}\nbranch=${branch}\nurl=${pull.html_url}\n`,
+      "utf8",
+    );
+  }
+}
+
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  prepareRelease().catch((error) => {
+    console.error(error.message);
+    process.exitCode = 1;
+  });
+}

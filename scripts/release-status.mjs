@@ -1,7 +1,8 @@
 import { appendFile, readFile, readdir } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
-import { APPS } from "./release-policy.mjs";
+import { APP, APP_MANIFEST } from "./release-policy.mjs";
 import { changesetTargets } from "./check-changeset-scope.mjs";
+import { computeNextVersion } from "./compute-version.mjs";
 
 const currentRef = process.env.GITHUB_REF_NAME ?? "HEAD";
 
@@ -13,57 +14,63 @@ function git(args) {
   return result.stdout.split("\n").filter(Boolean);
 }
 
-async function pendingFor(app) {
+async function pendingChangesets() {
   const entries = await readdir(".changeset", { withFileTypes: true });
   const pending = [];
   for (const entry of entries) {
-    if (!entry.isFile() || entry.name === "README.md" || !entry.name.endsWith(".md")) continue;
+    if (!entry.isFile() || entry.name === "README.md" || !entry.name.endsWith(".md")) {
+      continue;
+    }
     const path = `.changeset/${entry.name}`;
-    if (changesetTargets(await readFile(path, "utf8")).has(app)) pending.push(path);
+    if (changesetTargets(await readFile(path, "utf8")).has(APP)) {
+      pending.push(path);
+    }
   }
   return pending.sort();
 }
 
-async function appStatus(app) {
-  const packageJson = JSON.parse(await readFile(`apps/${app}/package.json`, "utf8"));
-  const [latestTag] = git(["tag", "--list", `${app}@*`, "--sort=-v:refname"]);
-  const relevantPaths = [`apps/${app}`, "packages/common"];
-  const changedFiles = latestTag
-    ? git(["diff", "--name-only", `${latestTag}...HEAD`, "--", ...relevantPaths])
-    : git(["ls-tree", "-r", "--name-only", "HEAD", "--", ...relevantPaths]);
-  const pending = await pendingFor(app);
-  const compareUrl =
-    latestTag && process.env.GITHUB_REPOSITORY
-      ? `${process.env.GITHUB_SERVER_URL ?? "https://github.com"}/${process.env.GITHUB_REPOSITORY}/compare/${encodeURIComponent(latestTag)}...${encodeURIComponent(currentRef)}`
-      : null;
-  const environmentUrl = process.env.GITHUB_REPOSITORY
-    ? `${process.env.GITHUB_SERVER_URL ?? "https://github.com"}/${process.env.GITHUB_REPOSITORY}/deployments/${encodeURIComponent(`production-${app}`)}`
+const packageJson = JSON.parse(await readFile(APP_MANIFEST, "utf8"));
+const [latestTag] = git(["tag", "--list", `${APP}@*`, "--sort=-v:refname"]);
+const changedFiles = latestTag
+  ? git([
+      "diff",
+      "--name-only",
+      `${latestTag}...HEAD`,
+      "--",
+      "apps/web",
+      "packages/common",
+    ])
+  : git(["ls-tree", "-r", "--name-only", "HEAD", "--", "apps/web", "packages/common"]);
+const pending = await pendingChangesets();
+const plan = await computeNextVersion({
+  hasCommitDiffs: changedFiles.length > 0,
+  requireChanges: true,
+});
+
+const compareUrl =
+  latestTag && process.env.GITHUB_REPOSITORY
+    ? `${process.env.GITHUB_SERVER_URL ?? "https://github.com"}/${process.env.GITHUB_REPOSITORY}/compare/${encodeURIComponent(latestTag)}...${encodeURIComponent(currentRef)}`
     : null;
 
-  return [
-    `## ${app}`,
-    "",
-    `- Version on main: \`${packageJson.version}\``,
-    `- Latest released tag: ${latestTag ? `\`${latestTag}\`` : "_none yet_"}`,
-    ...(environmentUrl
-      ? [`- [Production environment: production-${app}](${environmentUrl})`]
-      : []),
-    `- Pending changesets: ${pending.length}`,
-    ...pending.map((path) => `  - \`${path}\``),
-    `- Unreleased app/shared files since tag: ${changedFiles.length}`,
-    ...changedFiles.slice(0, 25).map((path) => `  - \`${path}\``),
-    ...(changedFiles.length > 25 ? [`  - _and ${changedFiles.length - 25} more_`] : []),
-    ...(compareUrl ? [`- [Compare released ${app} with main](${compareUrl})`] : []),
-    "",
-  ].join("\n");
-}
-
 const summary = [
-  "# Per-app release status",
+  "# Release status",
   "",
-  `Status for \`${currentRef}\`. Tags and production environments identify released code.`,
+  `Status for \`${currentRef}\`.`,
   "",
-  ...(await Promise.all(APPS.map(appStatus))),
+  `- Version: \`${packageJson.version}\``,
+  `- Latest tag: ${latestTag ? `\`${latestTag}\`` : "_none yet_"}`,
+  `- Pending changesets: ${pending.length}`,
+  ...pending.map((path) => `  - \`${path}\``),
+  `- Next version if released from this tip: \`${plan.version}\` (${plan.source})`,
+  `- Unreleased app/shared files since tag: ${changedFiles.length}`,
+  ...changedFiles.slice(0, 25).map((path) => `  - \`${path}\``),
+  ...(changedFiles.length > 25
+    ? [`  - _and ${changedFiles.length - 25} more_`]
+    : []),
+  ...(compareUrl ? [`- [Compare with latest tag](${compareUrl})`] : []),
+  "",
+  "Ephemeral branches (at most one each): `release/X.X.X`, `hotfix/X.X.X`, `backmerge/X.X.X`.",
+  "",
 ].join("\n");
 
 if (process.env.GITHUB_STEP_SUMMARY) {

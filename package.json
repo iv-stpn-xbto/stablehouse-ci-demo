@@ -8,13 +8,14 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "yarn workspace common build && yarn workspace web build && yarn workspace backoffice build",
+    "build": "yarn workspace common build && yarn workspace web build",
     "changeset": "node scripts/add-changeset.mjs patch",
     "changeset:minor": "node scripts/add-changeset.mjs minor",
     "changeset:major": "node scripts/add-changeset.mjs major",
     "changeset:status": "changeset status",
     "changeset:version": "changeset version",
     "check:changeset": "node scripts/check-changeset-scope.mjs",
+    "hotfix": "node scripts/hotfix.mjs",
     "test": "node --test"
   },
   "devDependencies": {
