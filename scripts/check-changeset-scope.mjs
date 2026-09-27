@@ -3,22 +3,13 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const RELEASE_TYPES = new Set(["patch", "minor", "major"]);
-const VERSIONED_PACKAGES = new Set(["web", "backoffice"]);
-const COMMON_CONSUMERS = Object.freeze(["web", "backoffice"]);
+const VERSIONED_PACKAGE = "web";
 
-export function requiredPackagesForPaths(paths) {
-  const required = new Set();
-
-  for (const path of paths) {
-    if (path.startsWith("apps/web/")) required.add("web");
-    if (path.startsWith("apps/backoffice/")) required.add("backoffice");
-    if (path.startsWith("packages/common/")) {
-      required.add("web");
-      required.add("backoffice");
-    }
-  }
-
-  return required;
+export function needsWebChangeset(paths) {
+  return paths.some(
+    (path) =>
+      path.startsWith("apps/web/") || path.startsWith("packages/common/"),
+  );
 }
 
 export function changesetTargets(contents) {
@@ -31,7 +22,9 @@ export function changesetReleases(contents) {
 
   const releases = new Map();
   for (const line of frontmatter[1].split("\n")) {
-    const match = line.match(/^\s*["']?([^"' :]+)["']?\s*:\s*(patch|minor|major)\s*$/);
+    const match = line.match(
+      /^\s*["']?([^"' :]+)["']?\s*:\s*(patch|minor|major)\s*$/,
+    );
     if (match && RELEASE_TYPES.has(match[2])) {
       releases.set(match[1], match[2]);
     }
@@ -39,18 +32,15 @@ export function changesetReleases(contents) {
   return releases;
 }
 
-export function missingTargets(paths, changesets) {
-  const required = requiredPackagesForPaths(paths);
-  const supplied = new Set(changesets.flatMap((contents) => [...changesetTargets(contents)]));
-  return [...required].filter((name) => !supplied.has(name)).sort();
-}
-
 export function validationErrors(paths, entries, pullNumber) {
   const errors = [];
   const contents = entries.map((entry) => entry.contents);
-  const missing = missingTargets(paths, contents);
-  if (missing.length > 0) {
-    errors.push(`Changed versioned code is missing changeset targets: ${missing.join(", ")}`);
+  const supplied = new Set(
+    contents.flatMap((entry) => [...changesetTargets(entry)]),
+  );
+
+  if (needsWebChangeset(paths) && !supplied.has(VERSIONED_PACKAGE)) {
+    errors.push("Changed versioned code is missing a web changeset");
   }
 
   for (const entry of entries) {
@@ -59,13 +49,9 @@ export function validationErrors(paths, entries, pullNumber) {
       errors.push(`${entry.path} must not version common`);
     }
     for (const name of releases.keys()) {
-      if (name !== "common" && !VERSIONED_PACKAGES.has(name)) {
+      if (name !== "common" && name !== VERSIONED_PACKAGE) {
         errors.push(`${entry.path} targets unknown package ${name}`);
       }
-    }
-    const appTargets = [...releases.keys()].filter((name) => VERSIONED_PACKAGES.has(name));
-    if (appTargets.length > 1) {
-      errors.push(`${entry.path} targets multiple apps; use one changeset file per app`);
     }
   }
 
@@ -73,12 +59,12 @@ export function validationErrors(paths, entries, pullNumber) {
     if (!Number.isSafeInteger(pullNumber) || pullNumber < 1) {
       errors.push("PR_NUMBER is required to validate generated common changesets");
     } else {
-      for (const app of COMMON_CONSUMERS) {
-        const generatedPath = `.changeset/common-pr-${pullNumber}-${app}.md`;
-        const generated = entries.find((entry) => entry.path === generatedPath);
-        if (changesetReleases(generated?.contents ?? "").get(app) !== "patch") {
-          errors.push(`${generatedPath} must contain a generated ${app}: patch release`);
-        }
+      const generatedPath = `.changeset/common-pr-${pullNumber}.md`;
+      const generated = entries.find((entry) => entry.path === generatedPath);
+      if (changesetReleases(generated?.contents ?? "").get("web") !== "patch") {
+        errors.push(
+          `${generatedPath} must contain a generated web: patch release`,
+        );
       }
     }
   }
@@ -102,10 +88,16 @@ function changedPaths(base, head) {
 
 async function changesetContents(paths) {
   const changedChangesets = paths.filter(
-    (path) => path.startsWith(".changeset/") && path.endsWith(".md") && path !== ".changeset/README.md",
+    (path) =>
+      path.startsWith(".changeset/") &&
+      path.endsWith(".md") &&
+      path !== ".changeset/README.md",
   );
   return Promise.all(
-    changedChangesets.map(async (path) => ({ path, contents: await readFile(path, "utf8") })),
+    changedChangesets.map(async (path) => ({
+      path,
+      contents: await readFile(path, "utf8"),
+    })),
   );
 }
 

@@ -2,11 +2,9 @@ import { mkdir, rm, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-const allowedApps = new Set(["web", "backoffice"]);
 const app = process.argv[2];
-
-if (!allowedApps.has(app)) {
-  throw new TypeError(`Expected one of: ${[...allowedApps].join(", ")}`);
+if (app !== "web") {
+  throw new TypeError("Expected app name: web");
 }
 
 const repositoryRoot = fileURLToPath(new URL("../", import.meta.url));
