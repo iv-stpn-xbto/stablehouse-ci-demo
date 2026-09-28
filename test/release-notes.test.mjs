@@ -79,18 +79,19 @@ test("attachCommitsToChangelog keeps changeset notes", () => {
   assert.match(section, /`ff20064` test/);
 });
 
-test("releasePullBody surfaces changelog and commits", () => {
+test("releasePullBody surfaces the changelog section", () => {
   const body = releasePullBody({
     version: "1.1.2",
     branch: "release/1.1.2",
     source: "patch-fallback",
-    changelogSection: "## 1.1.2\n\n### Patch Changes\n\n- hello\n",
-    commits: [{ hash: "abcd123", subject: "chore: follow up" }],
+    changelogSection:
+      "## 1.1.2\n\n### Patch Changes\n\n- hello\n\n### Commits\n\n- `abcd123` chore: follow up\n",
   });
   assert.match(body, /### Changelog/);
   assert.match(body, /## 1\.1\.2/);
   assert.match(body, /### Commits/);
   assert.match(body, /`abcd123` chore: follow up/);
+  assert.equal((body.match(/### Commits/g) ?? []).length, 1);
 });
 
 test("formatCommitsMarkdown handles an empty list", () => {

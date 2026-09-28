@@ -130,7 +130,7 @@ export async function writeChangelog(contents, path = CHANGELOG_PATH) {
   await writeFile(path, contents.endsWith("\n") ? contents : `${contents}\n`, "utf8");
 }
 
-export function releasePullBody({ version, branch, source, changelogSection, commits }) {
+export function releasePullBody({ version, branch, source, changelogSection }) {
   return [
     "<!-- stablehouse-release-summary:start -->",
     "## Release",
@@ -142,10 +142,6 @@ export function releasePullBody({ version, branch, source, changelogSection, com
     "### Changelog",
     "",
     changelogSection?.trim() || `_No changelog section for ${version}._`,
-    "",
-    "### Commits",
-    "",
-    formatCommitsMarkdown(commits),
     "",
     "Built from latest `main` with `develop` merged in, then versioned.",
     "<!-- stablehouse-release-summary:end -->",

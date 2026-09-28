@@ -163,7 +163,6 @@ async function prepareRelease() {
       branch,
       source: plan.source,
       changelogSection,
-      commits,
     }),
   });
 
