@@ -112,7 +112,7 @@ Update the web heading.
 1. Keep `develop` as the default branch.
 2. Protect `develop` and `main`; require the `CI / verify` check.
 3. Allowed heads into `main`: `release/X.X.X`, `hotfix/X.X.X`.
-4. Enable GitHub Actions to create PRs (and optionally auto-merge).
+4. Enable GitHub Actions to create PRs. Backmerge PRs are left for human approval.
 5. Add a least-privilege `RELEASE_BOT_TOKEN` with Contents and Pull requests
    write access so bot pushes retrigger workflows.
 
