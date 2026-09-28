@@ -52,9 +52,14 @@ On every push to `develop` or `main`, `release.yml` runs
    - from pending web changesets (highest of major/minor/patch), or
    - the next **patch** when there are commit diffs but no changesets
      (chores / hotfixes-style landings on develop).
-3. Apply the version (`changeset version`, or a direct `package.json` bump).
+3. Apply the version (`changeset version`, or a direct `package.json` bump) and
+   update `apps/web/CHANGELOG.md` with release notes plus the list of commits
+   from `main..develop`.
 4. Force-push exactly one `release/X.X.X` branch and open/update its PR into
-   `main`. Any other `release/*` branch/PR is closed and deleted.
+   `main` (PR body includes the changelog section and commit list). Any other
+   `release/*` branch/PR is closed and deleted.
+5. After merge, CI tags `web@X.X.X` and publishes a GitHub Release whose body is
+   that changelog section.
 
 ### Hotfix (`hotfix/X.X.X`)
 
