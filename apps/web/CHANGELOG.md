@@ -1,5 +1,16 @@
 # web
 
+## 1.1.3
+
+### Patch Changes
+
+- Release from develop without pending changesets.
+
+### Commits
+
+- `a45c75d` fix: follow up AGAIN
+- `1da0ee6` fix: follow up
+
 ## 1.1.2
 
 ### Patch Changes
