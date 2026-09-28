@@ -45,10 +45,10 @@ feature PR (+ web changeset)
 On every push to `develop` or `main`, `release.yml` runs
 `scripts/prepare-release.mjs`:
 
-1. If `develop` matches `main` and there are no pending changesets, clear any
-   `release/*` branch/PR and exit.
-2. Otherwise rebuild from latest `main`, merge `develop`, and compute
-   `X.X.X`:
+1. Require at least one commit on `develop` that is not in `main`, plus a tree
+   diff or pending changesets. Otherwise clear any `release/*` branch/PR and
+   exit (so a merged release does not reopen until develop moves again).
+2. Rebuild from latest `main`, merge `develop`, and compute `X.X.X`:
    - from pending web changesets (highest of major/minor/patch), or
    - the next **patch** when there are commit diffs but no changesets
      (chores / hotfixes-style landings on develop).
@@ -82,7 +82,7 @@ After a `release/*` or `hotfix/*` PR merges into `main` (and on every push to
 1. Tags `web@X.X.X` and deletes the merged ephemeral branch.
 2. Rebuilds exactly one `backmerge/X.X.X` from the tip of `main` (so a later
    hotfix rebases/renames the open backmerge automatically).
-3. Opens/updates the PR into `develop` and enables auto-merge when possible.
+3. Opens/updates the PR into `develop` for a human to approve and merge.
 
 ## Author changes
 
@@ -112,7 +112,7 @@ Update the web heading.
 1. Keep `develop` as the default branch.
 2. Protect `develop` and `main`; require the `CI / verify` check.
 3. Allowed heads into `main`: `release/X.X.X`, `hotfix/X.X.X`.
-4. Enable GitHub Actions to create PRs (and optionally auto-merge).
+4. Enable GitHub Actions to create PRs. Backmerge PRs are left for human approval.
 5. Add a least-privilege `RELEASE_BOT_TOKEN` with Contents and Pull requests
    write access so bot pushes retrigger workflows.
 

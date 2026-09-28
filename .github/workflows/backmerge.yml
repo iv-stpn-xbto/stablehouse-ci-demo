@@ -84,13 +84,3 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.RELEASE_BOT_TOKEN || github.token }}
         run: node scripts/prepare-backmerge.mjs
-
-      - name: Enable automatic merge when conflict-free
-        if: steps.backmerge.outputs.skipped != 'true' && steps.backmerge.outputs.url != ''
-        env:
-          GH_TOKEN: ${{ secrets.RELEASE_BOT_TOKEN || github.token }}
-          BACKMERGE_URL: ${{ steps.backmerge.outputs.url }}
-        run: |
-          if ! gh pr merge "$BACKMERGE_URL" --merge --auto; then
-            echo "::warning::Automatic merge is unavailable. The backmerge PR remains open for a human to resolve or merge."
-          fi
