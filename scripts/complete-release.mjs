@@ -7,6 +7,7 @@ import {
   assertVersion,
   parseVersionedBranch,
 } from "./release-policy.mjs";
+import { extractVersionSection } from "./release-notes.mjs";
 
 async function completeRelease() {
   const mergeSha = process.env.MERGE_SHA ?? "";
@@ -45,6 +46,42 @@ async function completeRelease() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ref: `refs/tags/${tag}`, sha: mergeSha }),
+    });
+  }
+
+  const changelogPath = `apps/${APP}/CHANGELOG.md`;
+  const changelogFile = await github(
+    `/contents/${changelogPath.split("/").map(encodeURIComponent).join("/")}?ref=${encodeURIComponent(mergeSha)}`,
+    {},
+    [404],
+  );
+  const changelogText = changelogFile
+    ? Buffer.from(changelogFile.content, "base64").toString("utf8")
+    : "";
+  const releaseBody =
+    extractVersionSection(changelogText, version) ??
+    `## ${version}\n\nReleased from \`${branch}\`.`;
+
+  const existingRelease = await github(`/releases/tags/${encodedTag}`, {}, [404]);
+  if (existingRelease) {
+    await github(`/releases/${existingRelease.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: tag,
+        body: releaseBody,
+      }),
+    });
+  } else {
+    await github("/releases", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        tag_name: tag,
+        name: tag,
+        body: releaseBody,
+        target_commitish: mergeSha,
+      }),
     });
   }
 
