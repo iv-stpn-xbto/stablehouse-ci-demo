@@ -42,7 +42,7 @@ async function versionFixture(changesets) {
     access: "restricted",
     baseBranch: "develop",
     updateInternalDependencies: "patch",
-    ignore: ["common"],
+    ignore: [],
     privatePackages: { version: true, tag: false },
   });
   await Promise.all(
