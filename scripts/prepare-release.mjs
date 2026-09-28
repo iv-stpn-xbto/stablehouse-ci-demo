@@ -22,6 +22,24 @@ function treesEqual(left, right) {
   );
 }
 
+/** Commits on develop that are not already contained in main. */
+export function developCommitsAhead(mainRef = "origin/main", developRef = "origin/develop") {
+  const count = Number(
+    gitOutput(["rev-list", "--count", `${mainRef}..${developRef}`]),
+  );
+  return Number.isFinite(count) ? count : 0;
+}
+
+/**
+ * Open a release only when develop has new commits beyond main and there is
+ * either a tree diff or pending changesets. This avoids reopening a release
+ * after main moves (or after a backmerge) with no new develop work.
+ */
+export function shouldPrepareRelease({ commitsAhead, hasTreeDiff, hasChangesets }) {
+  if (commitsAhead < 1) return false;
+  return hasTreeDiff || hasChangesets;
+}
+
 async function applyVersion(plan) {
   if (plan.source === "changesets") {
     const cli = resolve(root, "node_modules/@changesets/cli/bin.js");
@@ -61,9 +79,20 @@ async function prepareRelease() {
     return pendingWebBumps();
   })();
 
+  const commitsAhead = developCommitsAhead();
   const hasTreeDiff = !treesEqual("origin/main", "origin/develop");
-  if (!hasTreeDiff && bumps.size === 0) {
-    console.log("develop matches main and has no pending changesets; clearing release branch.");
+  if (
+    !shouldPrepareRelease({
+      commitsAhead,
+      hasTreeDiff,
+      hasChangesets: bumps.size > 0,
+    })
+  ) {
+    console.log(
+      commitsAhead < 1
+        ? "develop has no commits ahead of main; clearing release branch."
+        : "develop commits ahead of main introduce no tree/changeset changes; clearing release branch.",
+    );
     await clearKind(BRANCH_KINDS.release, { base: "main" });
     if (process.env.GITHUB_OUTPUT) {
       await appendFile(process.env.GITHUB_OUTPUT, "skipped=true\n", "utf8");
