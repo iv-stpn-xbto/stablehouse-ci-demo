@@ -8,7 +8,7 @@ export function renderPage(environment = "demo") {
     <main>
       <h1>Stablehouse Web</h1>
       <p class="tagline">Chore release smoke test — follow-up commit</p>
-      <p>Follow-up commit 2</p>
+      <p>Follow-up commit 3</p>
       <p>Environment: ${formatEnvironment(environment)}</p>
     </main>
   </body>
