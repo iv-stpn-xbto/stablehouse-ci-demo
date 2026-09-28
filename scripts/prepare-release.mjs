@@ -12,6 +12,16 @@ import {
   BRANCH_KINDS,
   releaseBranch,
 } from "./release-policy.mjs";
+import {
+  attachCommitsToChangelog,
+  buildVersionSection,
+  extractVersionSection,
+  listCommitsBetween,
+  readChangelog,
+  releasePullBody,
+  upsertChangelog,
+  writeChangelog,
+} from "./release-notes.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 
@@ -40,7 +50,7 @@ export function shouldPrepareRelease({ commitsAhead, hasTreeDiff, hasChangesets 
   return hasTreeDiff || hasChangesets;
 }
 
-async function applyVersion(plan) {
+async function applyVersion(plan, commits) {
   if (plan.source === "changesets") {
     const cli = resolve(root, "node_modules/@changesets/cli/bin.js");
     const result = spawnSync(process.execPath, [cli, "version"], {
@@ -50,12 +60,22 @@ async function applyVersion(plan) {
     if (result.status !== 0) {
       throw new Error("changeset version failed");
     }
+    const changelog = await readChangelog();
+    await writeChangelog(attachCommitsToChangelog(changelog, plan.version, commits));
     return;
   }
 
   const manifest = JSON.parse(await readFile(APP_MANIFEST, "utf8"));
   manifest.version = plan.version;
   await writeFile(APP_MANIFEST, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+
+  const changelog = await readChangelog();
+  const section = buildVersionSection({
+    version: plan.version,
+    bump: plan.bump ?? "patch",
+    commits,
+  });
+  await writeChangelog(upsertChangelog(changelog, section, plan.version));
 }
 
 async function commitRelease(plan) {
@@ -100,6 +120,8 @@ async function prepareRelease() {
     return;
   }
 
+  const commits = listCommitsBetween("origin/main", "origin/develop");
+
   // Build release from latest main, then bring develop in (rebase-equivalent).
   runGit(["checkout", "--force", "-B", "release-work", "origin/main"]);
   const merge = runGit(["merge", "--no-edit", "origin/develop"], {
@@ -114,7 +136,7 @@ async function prepareRelease() {
 
   const plan = await computeNextVersion({ hasCommitDiffs: true });
 
-  await applyVersion(plan);
+  await applyVersion(plan, commits);
   await commitRelease(plan);
 
   const branch = releaseBranch(plan.version);
@@ -123,25 +145,25 @@ async function prepareRelease() {
 
   await ensureSingleBranch(BRANCH_KINDS.release, branch, { base: "main" });
 
-  const { owner, github } = createGithubClient();
-  const body = [
-    "<!-- stablehouse-release-summary:start -->",
-    "## Release",
-    "",
-    `- Version: \`${plan.version}\``,
-    `- Branch: \`${branch}\``,
-    `- Version source: \`${plan.source}\``,
-    "",
-    "Built from latest `main` with `develop` merged in, then versioned.",
-    "This branch is force-updated when `develop` or `main` moves so it stays rebased on the latest integration.",
-    "<!-- stablehouse-release-summary:end -->",
-  ].join("\n");
+  const changelogSection =
+    extractVersionSection(await readChangelog(), plan.version) ??
+    buildVersionSection({
+      version: plan.version,
+      bump: plan.bump ?? "patch",
+      commits,
+    });
 
+  const { owner, github } = createGithubClient();
   const pull = await upsertPull(github, owner, {
     title: `Release ${plan.version}`,
     head: branch,
     base: "main",
-    body,
+    body: releasePullBody({
+      version: plan.version,
+      branch,
+      source: plan.source,
+      changelogSection,
+    }),
   });
 
   console.log(`Release branch ${branch} ready: ${pull.html_url}`);

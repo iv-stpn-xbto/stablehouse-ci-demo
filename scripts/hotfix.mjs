@@ -13,6 +13,12 @@ import {
   bumpVersion,
   hotfixBranch,
 } from "./release-policy.mjs";
+import {
+  buildVersionSection,
+  readChangelog,
+  upsertChangelog,
+  writeChangelog,
+} from "./release-notes.mjs";
 
 function parseArgs(argv) {
   let summary;
@@ -79,7 +85,16 @@ async function main() {
   manifest.version = version;
   await writeFile(APP_MANIFEST, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
 
-  runGit(["add", APP_MANIFEST]);
+  const changelog = await readChangelog();
+  const section = buildVersionSection({
+    version,
+    bump: "patch",
+    summaryLines: [summary],
+    commits: [],
+  });
+  await writeChangelog(upsertChangelog(changelog, section, version));
+
+  runGit(["add", APP_MANIFEST, `apps/${APP}/CHANGELOG.md`]);
   runGit(["commit", "-m", `Hotfix ${APP} ${version}\n\n${summary}`]);
 
   console.log(`Created ${branch} (${current} → ${version}).`);
