@@ -25,7 +25,7 @@ import {
   hotfixBranch,
   listCommitsBetween,
   parseVersionedBranch,
-  pendingWebBumps,
+  pendingFrontendBumps,
   readChangelog,
   releaseBranch,
   releasePullBody,
@@ -87,7 +87,7 @@ async function applyVersionDirect(plan, commits) {
     bump: plan.bump ?? "patch",
     summaryLines:
       plan.source === "changesets"
-        ? [`Bump from pending web changesets (${plan.bump}).`]
+        ? [`Bump from pending frontend changesets (${plan.bump}).`]
         : undefined,
     commits,
   });
@@ -117,7 +117,7 @@ export async function prepareRelease() {
 
   const bumps = await (async () => {
     runGit(["checkout", "--force", "origin/develop"]);
-    return pendingWebBumps();
+    return pendingFrontendBumps();
   })();
 
   const commitsAhead = developCommitsAhead();
@@ -160,7 +160,7 @@ export async function prepareRelease() {
   await applyVersionDirect(plan, commits);
   await commitRelease(plan);
 
-  // MISC parity: prod API client sync hook (no-op in this demo).
+  // Prod API client sync — separate commit after version bump.
   await syncApiClient("prod");
 
   const branch = releaseBranch(plan.version);
@@ -238,7 +238,7 @@ export async function prepareBackmerge() {
   // Recreate from latest main so the branch auto-rebases when main moves.
   runGit(["checkout", "--force", "-B", branch, "origin/main"]);
 
-  // MISC parity: dev API client sync hook (no-op in this demo).
+  // Dev API client sync — commit only when swagger differs.
   await syncApiClient("dev");
 
   runGit(["push", "--force", "origin", `HEAD:refs/heads/${branch}`]);
@@ -258,7 +258,7 @@ export async function prepareBackmerge() {
     "",
     "Carries production releases and hotfixes from `main` back to `develop`.",
     "This branch is force-updated to the tip of `main` whenever main moves,",
-    "Force-updated to the tip of `main` whenever main moves.",
+    "and may include a `Sync API client from dev swagger` commit.",
     "",
     "**Human merge only** — merge commit or fast-forward; **never squash**.",
     "Do not auto-merge.",

@@ -46,7 +46,7 @@ export function parseAddArgs(argv) {
       index += 1;
       continue;
     }
-    if (token === APP || token === "web") continue;
+    if (token === APP || token === "frontend") continue;
     if (token.startsWith("-")) {
       throw new TypeError(`Unknown flag: ${token}`);
     }
@@ -107,14 +107,14 @@ export async function addChangeset(argv = process.argv.slice(2)) {
   const parsed = parseAddArgs(argv);
   const paths = changedPathsForAdd();
 
-  if (!needsWebChangeset(paths) && paths.length > 0) {
+  if (!needsFrontendChangeset(paths) && paths.length > 0) {
     console.log(
-      "No versioned product code in the diff. Writing a web changeset anyway since you invoked yarn changeset.",
+      "No versioned product code in the diff. Writing a frontend changeset anyway since you invoked yarn changeset.",
     );
   }
 
   const summary = await resolveSummary(parsed.summary);
-  const name = `${parsed.bump}-web-${randomBytes(4).toString("hex")}.md`;
+  const name = `${parsed.bump}-frontend-${randomBytes(4).toString("hex")}.md`;
   const path = `.changeset/${name}`;
   await writeFile(path, changesetMarkdown(parsed.bump, summary), "utf8");
   console.log(`Wrote ${parsed.bump} changeset:\n- ${path}`);
@@ -122,12 +122,9 @@ export async function addChangeset(argv = process.argv.slice(2)) {
 
 // --- check ---
 
-export function needsWebChangeset(paths) {
+export function needsFrontendChangeset(paths) {
   return paths.some((path) => pathHasPrefix(path, PRODUCT_PATH_PREFIXES));
 }
-
-/** @deprecated Alias kept for parity with the MISC frontend naming. */
-export const needsFrontendChangeset = needsWebChangeset;
 
 export function isSharedOnlyChange(paths) {
   const touchesShared = paths.some((path) =>
@@ -146,7 +143,7 @@ export function validationErrors(paths, entries, pullNumber) {
     contents.flatMap((entry) => [...changesetTargets(entry)]),
   );
 
-  if (needsWebChangeset(paths) && !supplied.has(APP)) {
+  if (needsFrontendChangeset(paths) && !supplied.has(APP)) {
     errors.push(`Changed versioned code is missing a ${APP} changeset`);
   }
 
@@ -162,7 +159,7 @@ export function validationErrors(paths, entries, pullNumber) {
   }
 
   // Optional CI may add shared-pr-N.md for shared-only PRs. When present it must
-  // target web: patch; an authored web changeset alone also passes.
+  // target frontend: patch; an authored frontend changeset alone also passes.
   if (
     isSharedOnlyChange(paths) &&
     Number.isSafeInteger(pullNumber) &&
@@ -313,7 +310,7 @@ export function generatedChangeset(title) {
 "${APP}": patch
 ---
 
-Shared package change: ${summary}
+Shared library change: ${summary}
 `;
 }
 
@@ -384,7 +381,7 @@ async function upsert(github, path, branch, content, pullNumber) {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      message: `Add shared web changeset for PR #${pullNumber}`,
+      message: `Add shared frontend changeset for PR #${pullNumber}`,
       content: encoded,
       branch,
       ...(existing ? { sha: existing.sha } : {}),
@@ -430,7 +427,7 @@ export async function sharedChangesets() {
 
   if (isSharedOnly(files)) {
     await upsert(github, path, branch, generatedChangeset(title), pullNumber);
-    console.log("Generated web patch changeset for shared-only changes.");
+    console.log("Generated frontend patch changeset for shared-only changes.");
   } else {
     await remove(github, path, branch, pullNumber);
     console.log("Not shared-only; generated shared changeset is absent.");

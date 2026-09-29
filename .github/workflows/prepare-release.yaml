@@ -1,6 +1,6 @@
 # Prepare release — builds release/X.X.X from develop vs main and opens a PR.
 #
-# Auth: github.token only. GITHUB_TOKEN pushes do not
+# Auth: github.token only (no RELEASE_BOT_TOKEN). GITHUB_TOKEN pushes do not
 # retrigger push/PR workflows, so after a successful prepare this job:
 #   1. Runs yarn test:release-ci in the same run (smoke verification)
 #   2. Confirms the release branch tip exists on origin
@@ -43,12 +43,15 @@ jobs:
         run: corepack enable
 
       - name: Install dependencies
-        run: yarn install --frozen-lockfile
+        env:
+          YARN_NPM_AUTH_TOKEN: ${{ secrets.YARN_NPM_AUTH_TOKEN }}
+        run: yarn install --immutable
 
       - name: Create or rebase release/X.X.X
         id: prepare
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          YARN_NPM_AUTH_TOKEN: ${{ secrets.YARN_NPM_AUTH_TOKEN }}
         run: node scripts/release/release.mjs prepare
 
       - name: Same-run release CI smoke

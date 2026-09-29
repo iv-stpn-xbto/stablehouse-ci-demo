@@ -180,9 +180,9 @@ export async function branchExists(github, branch) {
 
 // --- release-policy ---
 const SEMVER = /^(\d+)\.(\d+)\.(\d+)(?:-[0-9A-Za-z.-]+)?$/;
-export const APP = "web";
-export const APP_MANIFEST = "apps/web/package.json";
-export const CHANGELOG_PATH = "apps/web/CHANGELOG.md";
+export const APP = "frontend";
+export const APP_MANIFEST = "package.json";
+export const CHANGELOG_PATH = "CHANGELOG.md";
 
 export const BRANCH_KINDS = Object.freeze({
   release: "release",
@@ -207,15 +207,25 @@ export function assertPermanentBaseBranch(base) {
   return /** @type {"main" | "develop"} */ (base);
 }
 
-/** Paths that require a web changeset on develop PRs. */
+/** Paths that require a frontend changeset on develop PRs. */
 export const PRODUCT_PATH_PREFIXES = Object.freeze([
-  "apps/web/",
+  "packages/web/",
+  "packages/mobile-new/",
   "packages/common/",
+  "packages/universal-components/",
+  "libs/",
 ]);
 
-export const APP_PATH_PREFIXES = Object.freeze(["apps/web/"]);
+export const APP_PATH_PREFIXES = Object.freeze([
+  "packages/web/",
+  "packages/mobile-new/",
+]);
 
-export const SHARED_PATH_PREFIXES = Object.freeze(["packages/common/"]);
+export const SHARED_PATH_PREFIXES = Object.freeze([
+  "packages/common/",
+  "packages/universal-components/",
+  "libs/",
+]);
 
 export function assertVersion(version, label = "package") {
   if (typeof version !== "string" || !SEMVER.test(version)) {
@@ -445,7 +455,7 @@ export function releasePullBody({ version, branch, source, changelogSection }) {
     changelogSection?.trim() || `_No changelog section for ${version}._`,
     "",
     "Built from latest `main` with `develop` merged in, then versioned.",
-    `After merge: tag \`web@${version}\` and open \`backmerge/${version}\` into develop (human merge; never squash).`,
+    `After merge: tag \`frontend@${version}\` and open \`backmerge/${version}\` into develop (human merge; never squash).`,
     "<!-- stablehouse-release-summary:end -->",
   ].join("\n");
 }
@@ -474,7 +484,7 @@ export function changesetReleases(contents) {
 }
 
 // --- compute-version ---
-export async function pendingWebBumps(changesetDir = ".changeset") {
+export async function pendingFrontendBumps(changesetDir = ".changeset") {
   const entries = await readdir(changesetDir, { withFileTypes: true });
   const bumps = new Set();
   for (const entry of entries) {
@@ -492,8 +502,8 @@ export async function pendingWebBumps(changesetDir = ".changeset") {
   return bumps;
 }
 
-/** @deprecated Alias kept for parity with the MISC frontend naming. */
-export const pendingFrontendBumps = pendingWebBumps;
+/** @deprecated Use pendingFrontendBumps */
+export const pendingWebBumps = pendingFrontendBumps;
 
 export async function readAppVersion(manifestPath = APP_MANIFEST) {
   const packageJson = JSON.parse(await readFile(manifestPath, "utf8"));
@@ -502,18 +512,18 @@ export async function readAppVersion(manifestPath = APP_MANIFEST) {
 
 /**
  * Next release version for the current working tree.
- * Uses the highest pending web changeset bump, or patch when there are
+ * Uses the highest pending frontend changeset bump, or patch when there are
  * commit diffs but no changesets (chores / CI-driven releases).
  *
- * Does NOT invoke `changeset version` — only apps/web is bumped by
- * prepare-release / hotfix. packages/common stays at 0.0.0.
+ * Does NOT invoke `changeset version` — workspace packages stay unversioned;
+ * only root package.json (frontend) is bumped by prepare-release / hotfix.
  */
 export async function computeNextVersion({
   requireChanges = false,
   hasCommitDiffs = false,
 } = {}) {
   const current = await readAppVersion();
-  const bumps = await pendingWebBumps();
+  const bumps = await pendingFrontendBumps();
   const bump = highestBump(bumps);
 
   if (bump) {
@@ -609,20 +619,58 @@ export async function clearKind(kind, { base, closeMessage } = {}) {
   });
 }
 
+// --- sync-api-client ---
+const ENVIRONMENTS = Object.freeze({
+  prod: {
+    script: "typings:prod",
+    message: "Sync API client from prod swagger",
+  },
+  dev: {
+    script: "typings:dev",
+    message: "Sync API client from dev swagger",
+  },
+});
+
 /**
- * Placeholder matching the MISC prepare/backmerge hook for API typings sync.
- * This demo has no api-client workspace, so the step is a no-op.
+ * Rebuild @xbto/api-client typings for the given environment and commit when dirty.
+ * Fails loudly if typings fails. Callers must yarn install first.
  *
  * @param {"prod"|"dev"} environment
- * @returns {Promise<boolean>} always false (no sync commit)
+ * @returns {Promise<boolean>} true when a sync commit was created
  */
 export async function syncApiClient(environment) {
-  if (environment !== "prod" && environment !== "dev") {
+  const config = ENVIRONMENTS[environment];
+  if (!config) {
     throw new TypeError(`Unknown API sync environment: ${environment}`);
   }
-  console.log(
-    `Skipping API client sync (${environment}); not present in this demo.`,
+
+  const result = spawnSync(
+    "yarn",
+    ["workspace", "@xbto/api-client", config.script],
+    {
+      encoding: "utf8",
+      stdio: "inherit",
+      env: process.env,
+    },
   );
-  return false;
+  if (result.status !== 0) {
+    throw new Error(
+      `API client typings (${config.script}) failed with exit ${result.status ?? "unknown"}`,
+    );
+  }
+
+  runGit(["add", "-A", "--", "libs/api-client"]);
+  const staged = gitOutput(["diff", "--cached", "--name-only"], {
+    allowFailure: true,
+  });
+  if (!staged) {
+    console.log(`API client already matches ${environment} swagger; no sync commit.`);
+    return false;
+  }
+
+  configureBotIdentity();
+  runGit(["commit", "-m", config.message]);
+  console.log(`Committed: ${config.message}`);
+  return true;
 }
 

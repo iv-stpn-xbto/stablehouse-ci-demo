@@ -1,7 +1,7 @@
 # Complete release and backmerge — tags a merged release/hotfix, then opens
 # backmerge/X.X.X into develop.
 #
-# Auth: github.token only. GITHUB_TOKEN pushes do not
+# Auth: github.token only (no RELEASE_BOT_TOKEN). GITHUB_TOKEN pushes do not
 # retrigger push/PR workflows, so after a successful backmerge prepare this job:
 #   1. Runs yarn test:release-ci in the same run (smoke verification)
 #   2. Chains release-status + release-guards via workflow_dispatch
@@ -82,12 +82,15 @@ jobs:
         run: corepack enable
 
       - name: Install dependencies
-        run: yarn install --frozen-lockfile
+        env:
+          YARN_NPM_AUTH_TOKEN: ${{ secrets.YARN_NPM_AUTH_TOKEN }}
+        run: yarn install --immutable
 
       - name: Create or rebase backmerge/X.X.X
         id: backmerge
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          YARN_NPM_AUTH_TOKEN: ${{ secrets.YARN_NPM_AUTH_TOKEN }}
         run: node scripts/release/release.mjs backmerge
 
       - name: Same-run release CI smoke

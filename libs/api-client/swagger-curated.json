@@ -1,0 +1,69 @@
+{
+  "openapi": "3.0.1",
+  "info": {
+    "title": "Stablehouse Public",
+    "version": "v1-dev",
+    "description": "Demo fixture: development swagger"
+  },
+  "paths": {
+    "/v1/account/tag/validate": {
+      "post": {
+        "tags": [
+          "Account"
+        ],
+        "summary": "Validate tag format and existence",
+        "operationId": "ValidateTag",
+        "deprecated": false,
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/account/tag/get": {
+      "get": {
+        "tags": [
+          "Account"
+        ],
+        "summary": "Get account tag",
+        "operationId": "GetTag",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/demo/dev-only": {
+      "get": {
+        "tags": [
+          "Demo"
+        ],
+        "summary": "Dev-only endpoint (absent from prod fixture)",
+        "operationId": "GetDevOnly",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AccountTag": {
+        "type": "object",
+        "properties": {
+          "tag": {
+            "type": "string"
+          },
+          "deprecated.legacyField": {
+            "type": "string",
+            "deprecated": true
+          }
+        }
+      }
+    }
+  }
+}

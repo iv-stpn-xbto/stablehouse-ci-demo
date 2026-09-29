@@ -1,21 +1,18 @@
-# Product verification — build and unit tests. Release rules live in
-# release-guards.yaml (MISC parity).
-name: CI
+# Staging product CI stub — MISC runs AWS/ECR here; demo only verifies build.
+name: Web-app Staging CI
 
 on:
-  pull_request:
-    branches: [develop, main]
-  push:
-    branches: [develop, main, "release/**", "hotfix/**", "backmerge/**"]
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
   verify:
+    name: Build and verify - staging
     runs-on: ubuntu-latest
     steps:
-      - name: Check out repository
+      - name: Checkout code
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Set up Node.js
@@ -28,10 +25,9 @@ jobs:
         run: corepack enable
 
       - name: Install dependencies
-        run: yarn install --frozen-lockfile
+        env:
+          YARN_NPM_AUTH_TOKEN: ${{ secrets.YARN_NPM_AUTH_TOKEN }}
+        run: yarn install --immutable
 
       - name: Build workspaces
         run: yarn build
-
-      - name: Run tests
-        run: yarn test
