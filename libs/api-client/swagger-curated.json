@@ -2,8 +2,8 @@
   "openapi": "3.0.1",
   "info": {
     "title": "Stablehouse Public",
-    "version": "v1-dev",
-    "description": "Demo fixture: development swagger"
+    "version": "v1-prod",
+    "description": "Demo fixture: production swagger"
   },
   "paths": {
     "/v1/account/tag/validate": {
@@ -35,13 +35,13 @@
         }
       }
     },
-    "/v1/demo/dev-only": {
+    "/v1/demo/prod-only": {
       "get": {
         "tags": [
           "Demo"
         ],
-        "summary": "Dev-only endpoint (absent from prod fixture)",
-        "operationId": "GetDevOnly",
+        "summary": "Prod-only endpoint (absent from dev fixture)",
+        "operationId": "GetProdOnly",
         "responses": {
           "200": {
             "description": "OK"
