@@ -1,3 +1,5 @@
+# Product verification — build and unit tests. Release rules live in
+# release-guards.yaml (MISC parity).
 name: CI
 
 on:
@@ -15,13 +17,11 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          fetch-depth: 0
 
       - name: Set up Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: 22
+          node-version-file: .nvmrc
           cache: yarn
 
       - name: Enable Corepack
@@ -35,53 +35,3 @@ jobs:
 
       - name: Run tests
         run: yarn test
-
-      - name: Validate changeset scope
-        if: github.event_name == 'pull_request' && github.base_ref == 'develop'
-        env:
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: yarn check:changeset "origin/${{ github.base_ref }}" HEAD
-
-      - name: Enforce release and hotfix PRs into main
-        if: github.event_name == 'pull_request' && github.base_ref == 'main'
-        env:
-          HEAD_BRANCH: ${{ github.head_ref }}
-        run: |
-          if [[ ! "$HEAD_BRANCH" =~ ^(release|hotfix)/[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
-            echo "::error::Pull requests to main must be release/X.X.X or hotfix/X.X.X."
-            exit 1
-          fi
-
-      - name: Enforce backmerge naming into develop
-        if: >-
-          github.event_name == 'pull_request' &&
-          github.base_ref == 'develop' &&
-          startsWith(github.head_ref, 'backmerge/')
-        env:
-          HEAD_BRANCH: ${{ github.head_ref }}
-        run: |
-          if [[ ! "$HEAD_BRANCH" =~ ^backmerge/[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
-            echo "::error::Backmerge pull requests must use backmerge/X.X.X."
-            exit 1
-          fi
-
-  unique-branch:
-    if: >-
-      github.event_name == 'pull_request' &&
-      (startsWith(github.head_ref, 'release/') ||
-       startsWith(github.head_ref, 'hotfix/') ||
-       startsWith(github.head_ref, 'backmerge/'))
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pull-requests: write
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-
-      - name: Keep a single release/hotfix/backmerge branch
-        env:
-          GITHUB_TOKEN: ${{ secrets.RELEASE_BOT_TOKEN || github.token }}
-          HEAD_BRANCH: ${{ github.head_ref }}
-          BASE_BRANCH: ${{ github.base_ref }}
-        run: node scripts/enforce-branch-uniqueness.mjs

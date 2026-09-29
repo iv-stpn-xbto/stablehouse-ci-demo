@@ -18,4 +18,4 @@ jobs:
           fetch-depth: 0
 
       - name: Summarize release state
-        run: node scripts/release-status.mjs
+        run: node scripts/release/release.mjs status

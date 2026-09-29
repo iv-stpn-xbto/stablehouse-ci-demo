@@ -1,4 +1,4 @@
-name: Common web changeset
+name: Shared web changeset
 
 on:
   pull_request_target:
@@ -6,7 +6,7 @@ on:
     types: [opened, synchronize, reopened, edited]
 
 concurrency:
-  group: common-changesets-${{ github.event.pull_request.number }}
+  group: shared-changesets-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 permissions:
@@ -15,6 +15,7 @@ permissions:
 
 jobs:
   generate:
+    if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     steps:
       - name: Check out trusted base scripts
@@ -23,9 +24,9 @@ jobs:
           ref: ${{ github.event.pull_request.base.sha }}
           persist-credentials: false
 
-      - name: Generate web changeset for common changes
+      - name: Generate web changeset for shared-only changes
         env:
-          GITHUB_TOKEN: ${{ secrets.RELEASE_BOT_TOKEN || github.token }}
+          GITHUB_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_TITLE: ${{ github.event.pull_request.title }}
-        run: node scripts/common-changesets.mjs
+        run: node scripts/release/changesets.mjs shared
