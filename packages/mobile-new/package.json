@@ -1,0 +1,10 @@
+{
+  "name": "mobile-new",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node --check src/index.js",
+    "start": "node -e \"console.log('mobile-new stub')\""
+  }
+}

@@ -1,0 +1,36 @@
+{
+  "openapi": "3.0.1",
+  "info": {
+    "title": "Stablehouse Public",
+    "version": "v1",
+    "description": "Checked-in swagger; overwritten in place by typings:dev / typings:prod"
+  },
+  "paths": {
+    "/v1/account/tag/validate": {
+      "post": {
+        "tags": ["Account"],
+        "summary": "Validate tag format and existence",
+        "operationId": "ValidateTag",
+        "responses": { "200": { "description": "OK" } }
+      }
+    },
+    "/v1/account/tag/get": {
+      "get": {
+        "tags": ["Account"],
+        "summary": "Get account tag",
+        "operationId": "GetTag",
+        "responses": { "200": { "description": "OK" } }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AccountTag": {
+        "type": "object",
+        "properties": {
+          "tag": { "type": "string" }
+        }
+      }
+    }
+  }
+}

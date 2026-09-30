@@ -1,22 +1,29 @@
 {
-  "name": "stablehouse-ci-demo",
-  "version": "0.0.0",
+  "name": "frontend",
+  "version": "1.2.0",
   "private": true,
-  "packageManager": "yarn@1.22.22",
+  "license": "ISC",
+  "description": "Workspace for all frontend packages",
+  "author": "Stablehouse",
+  "packageManager": "yarn@3.4.1",
   "workspaces": [
-    "apps/*",
+    "libs/*",
     "packages/*"
   ],
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
-    "build": "yarn workspace common build && yarn workspace web build",
-    "changeset": "node scripts/add-changeset.mjs patch",
-    "changeset:minor": "node scripts/add-changeset.mjs minor",
-    "changeset:major": "node scripts/add-changeset.mjs major",
-    "changeset:status": "changeset status",
-    "changeset:version": "changeset version",
-    "check:changeset": "node scripts/check-changeset-scope.mjs",
-    "hotfix": "node scripts/hotfix.mjs",
-    "test": "node --test"
+    "build": "yarn workspace @xbto/api-client build && yarn workspace common build && yarn workspace web build && yarn workspace mobile-new build && yarn workspace @stablehouse-dev/universal-components build",
+    "static:checks": "yarn build && yarn test && yarn test:release-ci",
+    "changeset": "node scripts/release/changesets.mjs add patch",
+    "changeset:minor": "node scripts/release/changesets.mjs add minor",
+    "changeset:major": "node scripts/release/changesets.mjs add major",
+    "changeset:status": "yarn exec changeset status",
+    "check:changeset": "node scripts/release/changesets.mjs check",
+    "hotfix": "node scripts/release/release.mjs hotfix",
+    "test": "node --test test/*.test.mjs",
+    "test:release-ci": "node --test scripts/release/test/*.test.mjs"
   },
   "devDependencies": {
     "@changesets/cli": "2.29.7"

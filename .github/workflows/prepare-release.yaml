@@ -1,0 +1,85 @@
+# Prepare release — builds release/X.X.X from develop vs main and opens a PR.
+#
+# Auth: github.token only (no RELEASE_BOT_TOKEN). GITHUB_TOKEN pushes do not
+# retrigger push/PR workflows, so after a successful prepare this job:
+#   1. Runs yarn test:release-ci in the same run (smoke verification)
+#   2. Confirms the release branch tip exists on origin
+#   3. Chains release-status + release-guards via workflow_dispatch
+# Residual: org/repo must allow Actions to create PRs; required status checks
+# on release PRs may need to accept the dispatched release-guards run.
+name: Prepare release
+
+on:
+  push:
+    branches: [develop]
+  workflow_dispatch:
+
+concurrency:
+  group: prepare-release
+  cancel-in-progress: false
+
+permissions:
+  actions: write
+  contents: write
+  pull-requests: write
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          token: ${{ github.token }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: .nvmrc
+          cache: yarn
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install dependencies
+        env:
+          YARN_NPM_AUTH_TOKEN: ${{ secrets.YARN_NPM_AUTH_TOKEN }}
+        run: yarn install --immutable
+
+      - name: Create or rebase release/X.X.X
+        id: prepare
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          YARN_NPM_AUTH_TOKEN: ${{ secrets.YARN_NPM_AUTH_TOKEN }}
+        run: node scripts/release/release.mjs prepare
+
+      - name: Same-run release CI smoke
+        if: steps.prepare.outputs.skipped != 'true'
+        run: yarn test:release-ci
+
+      - name: Verify release branch tip
+        if: steps.prepare.outputs.skipped != 'true'
+        env:
+          BRANCH: ${{ steps.prepare.outputs.branch }}
+        run: |
+          set -euo pipefail
+          tip="$(git ls-remote --heads origin "$BRANCH" | awk '{print $1}')"
+          if [[ -z "$tip" ]]; then
+            echo "::error::Release branch ${BRANCH} not found on origin"
+            exit 1
+          fi
+          echo "Release branch tip: ${tip}"
+
+      - name: Chain follow-up workflows
+        if: steps.prepare.outputs.skipped != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_BRANCH: ${{ steps.prepare.outputs.branch }}
+        run: |
+          set -euo pipefail
+          gh workflow run release-status.yaml --ref develop
+          gh workflow run release-guards.yaml \
+            --ref "${{ github.ref_name }}" \
+            -f head_branch="${HEAD_BRANCH}" \
+            -f base_branch=main

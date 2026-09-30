@@ -1,133 +1,150 @@
 # Stablehouse release CI demo
 
-Single-app (`web`) Changesets demo with ephemeral `release/X.X.X`,
-`hotfix/X.X.X`, and `backmerge/X.X.X` branches. At most one branch of each kind
-exists at a time.
+Exact release-CI contract from `stablehouse-front-end-apps-MISC`
+(`ci/shf-359-release-hotfix-backmerge-ci`): consolidated `scripts/release/` CLIs,
+root `frontend` semver, ephemeral `release/` / `hotfix/` / `backmerge/` branches,
+`github.token` auth, `workflow_dispatch` chaining, and API client swagger sync.
 
 ## Workspace
 
-- `apps/web` — private, versioned app.
-- `packages/common` — shared source used by web, never versioned or released.
-
-`common` stays at `0.0.0`. CI rejects changesets targeting it. Nothing publishes
-to npm.
+| Path | Role |
+| --- | --- |
+| Root `package.json` (`frontend`) | Sole versioned release package |
+| `packages/web` | Web app |
+| `packages/mobile-new` | Mobile stub (path-prefix parity) |
+| `packages/common` | Shared package (never independently released) |
+| `packages/universal-components` | UC stub (path-prefix parity) |
+| `libs/api-client` (`@xbto/api-client`) | Swagger typings; synced on release/backmerge |
 
 ```bash
 corepack enable
-yarn install --frozen-lockfile
-yarn build
-yarn test
+yarn install --immutable
+yarn static:checks
 ```
 
 ## Branch flow
 
-Only `develop` and `main` are permanent.
-
 ```text
-feature PR (+ web changeset)
+feature PR (+ frontend changeset)
         │
-        │ common code => CI adds web: patch changeset
+        │ shared-only => CI adds frontend: patch (shared-pr-N)
         ▼
      develop
         │
-        │ push → prepare release/X.X.X from main + develop, then version
+        │ push → prepare release/X.X.X (main + develop, version, typings:prod)
         ▼
   release/X.X.X ──PR──▶ main
                           │
           yarn hotfix ────┤──▶ hotfix/X.X.X ──PR──▶ main
                           │
                           ▼
-                   backmerge/X.X.X ──PR──▶ develop
+                   backmerge/X.X.X (+ typings:dev) ──PR──▶ develop
 ```
 
-### Release (`release/X.X.X`)
+### Release / hotfix / backmerge
 
-On every push to `develop` or `main`, `release.yml` runs
-`scripts/prepare-release.mjs`:
+Same as MISC, with this demo's bump policy:
 
-1. Require at least one commit on `develop` that is not in `main`, plus a tree
-   diff or pending changesets. Otherwise clear any `release/*` branch/PR and
-   exit (so a merged release does not reopen until develop moves again).
-2. Rebuild from latest `main`, merge `develop`, and compute `X.X.X`:
-   - from pending web changesets (highest of major/minor/patch), or
-   - the next **patch** when there are commit diffs but no changesets
-     (chores / hotfixes-style landings on develop).
-3. Apply the version (`changeset version`, or a direct `package.json` bump) and
-   update `apps/web/CHANGELOG.md` with release notes plus the list of commits
-   from `main..develop`.
-4. Force-push exactly one `release/X.X.X` branch and open/update its PR into
-   `main` (PR body includes the changelog section and commit list). Any other
-   `release/*` branch/PR is closed and deleted.
-5. After merge, CI tags `web@X.X.X` and publishes a GitHub Release whose body is
-   that changelog section.
+| Path | Bump |
+| --- | --- |
+| `yarn hotfix` | always **patch** from `origin/main` |
+| `release/X.X.X` (prepare) | at least **minor** (patch changesets and chore diffs are floored up; major stays major) |
 
-### Hotfix (`hotfix/X.X.X`)
+1. **Prepare release** — `node scripts/release/release.mjs prepare` then
+   `typings:prod` sync commit when dirty; same-run smoke; chain status + guards.
+2. **Complete** — tag `frontend@X.X.X`, delete ephemeral head, open
+   `backmerge/X.X.X` with optional `typings:dev` sync.
+3. **Hotfix** — `yarn hotfix -m "…"`.
+4. Merge release/hotfix/backmerge with FF or merge commit — **never squash**.
 
-From a clean worktree:
+### API client swagger sync
 
-```bash
-yarn hotfix -m "Fix checkout timeout"
-# or: yarn hotfix --no-push
-```
+| Branch | Command | Commit |
+| --- | --- | --- |
+| `release/X.X.X` | `yarn workspace @xbto/api-client typings:prod` | `Sync API client from prod swagger` |
+| `backmerge/X.X.X` | `yarn workspace @xbto/api-client typings:dev` | `Sync API client from dev swagger` |
 
-The CLI:
+Immediately after sync, prepare restores **env-stable paths** from the
+destination permanent branch (`ENV_STABLE_PATHS` in `scripts/release/lib.mjs`):
 
-1. Reads `web` version from `origin/main`.
-2. Creates `hotfix/X.X.X` with a **+1 patch** bump in `apps/web/package.json`.
-3. Force-pushes that branch (unless `--no-push`), keeps it the only `hotfix/*`,
-   and opens a PR into `main` when `GITHUB_TOKEN` / `GH_TOKEN` is available.
+| Flow | Restore source | Commit (when dirty) |
+| --- | --- | --- |
+| Release | `origin/main` | `Restore env-stable paths from main` |
+| Backmerge | `origin/develop` | `Restore env-stable paths from develop` |
 
-Add fix commits on the branch before merging.
+Current path: `packages/common/src/utils/factories`.
 
-### Backmerge (`backmerge/X.X.X`)
+Showcase (from MISC #2439 / enrich-trade-currency factory):
 
-After a `release/*` or `hotfix/*` PR merges into `main` (and on every push to
-`main`), `backmerge.yml`:
+| Branch | Behavior |
+| --- | --- |
+| `develop` | Maps `couponPercent`, `paymentFrequency`, `bidSpread`, `askSpread` (dev swagger) |
+| `main` | Those four assignments are commented out (prod types) |
 
-1. Tags `web@X.X.X` and deletes the merged ephemeral branch.
-2. Rebuilds exactly one `backmerge/X.X.X` from the tip of `main` (so a later
-   hotfix rebases/renames the open backmerge automatically).
-3. Opens/updates the PR into `develop` for a human to approve and merge.
+After release prepare syncs **prod** swagger, `restoreEnvStablePaths("origin/main")`
+puts the prod factory back. After backmerge syncs **dev** swagger,
+`restoreEnvStablePaths("origin/develop")` puts the develop factory back.
+
+API typings match MISC: `typings:dev` / `typings:prod` fetch the env swagger URL
+and overwrite the same `libs/api-client/swagger.json` (+ curated / generated
+client) in place — no per-env fixture folders.
 
 ## Author changes
 
 ```bash
-yarn changeset                 # patch (default)
-yarn changeset:minor           # minor
-yarn changeset:major           # major
-yarn changeset -m "Summary"    # skip the summary prompt
+yarn changeset
+yarn changeset:minor -m "Summary"
 ```
 
 ```md
 ---
-"web": patch
+"frontend": patch
 ---
 
 Update the web heading.
 ```
 
-| Changed code | Required behavior |
+## Workflows
+
+| Workflow | Role |
 | --- | --- |
-| `apps/web/**` | Author a web changeset |
-| `packages/common/**` | CI generates `.changeset/common-pr-<PR>.md` with `web: patch` |
-| Docs/workflows/config only | No changeset (release still patch-bumps if develop differs from main) |
+| `prepare-release.yaml` | Create/rebase `release/X.X.X` |
+| `complete-release-and-backmerge.yaml` | Tag + `backmerge/X.X.X` |
+| `release-guards.yaml` | Scope, naming, uniqueness |
+| `release-status.yaml` | Summary |
+| `shared-changesets.yaml` | Auto frontend:patch for shared-only PRs |
+| `web-app-develop-ci.yaml` | Product verify (build/tests; no AWS/ECR) |
+| `web-app-staging-ci.yaml` / `web-app-prod-ci.yaml` | Dispatch stubs (build only) |
+
+## Scripts
+
+```bash
+node scripts/release/changesets.mjs add <patch|minor|major> [-m summary]
+node scripts/release/changesets.mjs check <base> [head]
+node scripts/release/changesets.mjs shared
+
+node scripts/release/release.mjs prepare|backmerge|complete|hotfix|status|enforce-uniqueness
+```
 
 ## GitHub setup
 
-1. Keep `develop` as the default branch.
-2. Protect `develop` and `main`; require the `CI / verify` check.
-3. Allowed heads into `main`: `release/X.X.X`, `hotfix/X.X.X`.
-4. Enable GitHub Actions to create PRs. Backmerge PRs are left for human approval.
-5. Add a least-privilege `RELEASE_BOT_TOKEN` with Contents and Pull requests
-   write access so bot pushes retrigger workflows.
+1. Default branch `develop`.
+2. Protect `develop` / `main`; require develop CI + release-guards as needed.
+3. Allow GitHub Actions to create PRs (`github.token`).
+4. Optional `YARN_NPM_AUTH_TOKEN` (unused by this demo's public deps; workflows
+   pass it for MISC parity).
 
 ## Local verification
 
 ```bash
-yarn install --frozen-lockfile
-yarn build
-yarn test
-node scripts/release-status.mjs
+yarn install --immutable
+yarn static:checks
+node scripts/release/release.mjs status
 ```
 
-External GitHub Actions are pinned to immutable commit SHAs.
+### Remaining demo-only deltas vs MISC
+
+- Product `web-app-*-ci` workflows skip AWS OIDC/ECR deploy.
+- `@xbto/api-client` typings use a lightweight generator (same yarn script names
+  and in-place `swagger.json` overwrite) instead of NSwag + .NET.
+- No `tools/*` / `packages/mobile` workspaces.
