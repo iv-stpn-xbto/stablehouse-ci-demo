@@ -18,7 +18,7 @@
 
 /**
  * Map tradable currencies into the enriched account-detail asset currency bag.
- * Develop/env shape — includes fields that exist on the **dev** swagger.
+ * Prod/main shape — coupon/spread fields omitted to match prod swagger types.
  *
  * @param {DemoCurrency[]} ccys
  * @returns {Array<{ currency: Record<string, unknown> }>}
@@ -36,11 +36,10 @@ export function mapTradableCurrenciesToEnrichedAccountDetailAssets(ccys) {
         allowFiatConversion: false,
         availableSupply: ccy.availableSupply ?? null,
         couponFee: ccy.couponFee ?? null,
-        // Dev swagger / types expose these; prod does not (see prod factory on main).
-        couponPercent: ccy.couponPercent ?? null,
-        paymentFrequency: ccy.paymentFrequency ?? null,
-        bidSpread: ccy.bidSpread ?? null,
-        askSpread: ccy.askSpread ?? null,
+        // couponPercent: ccy.couponPercent ?? null,
+        // paymentFrequency: ccy.paymentFrequency ?? null,
+        // bidSpread: ccy.bidSpread ?? null,
+        // askSpread: ccy.askSpread ?? null,
         hidden: false,
         showInMarkets: false,
         showInTopGainersOrLosers: false,
@@ -61,5 +60,5 @@ export function mapTradableCurrenciesToEnrichedAccountDetailAssets(ccys) {
     }));
 }
 
-/** Marker for tests / CI demos — develop tip before prod-type restore. */
-export const ENV_STABLE_MARKER = "develop";
+/** Marker for tests / CI demos — main / prod tip after #2439-style fix. */
+export const ENV_STABLE_MARKER = "main";
