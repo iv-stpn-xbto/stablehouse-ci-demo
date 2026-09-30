@@ -1,5 +1,17 @@
 # frontend
 
+## 1.2.2
+
+### Patch Changes
+
+- Prepare release only on develop pushes (do not run on main).
+
+## 1.2.1
+
+### Patch Changes
+
+- Add env-stable factories baseline for release path restore.
+
 ## 1.2.0
 
 ### Minor Changes
