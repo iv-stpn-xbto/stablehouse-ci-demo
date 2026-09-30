@@ -1,13 +1,16 @@
 /**
- * Env-stable demo factories — restored from the destination permanent branch
- * after API client swagger sync (see ENV_STABLE_PATHS in scripts/release/lib.mjs).
+ * Env-stable factories (demo).
+ *
+ * This directory is listed in `ENV_STABLE_PATHS`. After swagger typings sync,
+ * release CI restores it from `origin/main` (release) or `origin/develop`
+ * (backmerge) so env-specific enrich adaptations are not wiped.
+ *
+ * Showcase file: `enrich-trade-currency-to-account-detail-asset.js`
+ * — develop maps couponPercent / paymentFrequency / bidSpread / askSpread
+ * — main comments those out (prod types, MISC #2439)
  */
-export const ENV_STABLE_MARKER = "develop";
 
-export function createDemoAccount(overrides = {}) {
-  return {
-    id: "acct_demo",
-    environment: ENV_STABLE_MARKER,
-    ...overrides,
-  };
-}
+export {
+  ENV_STABLE_MARKER,
+  mapTradableCurrenciesToEnrichedAccountDetailAssets,
+} from "./enrich-trade-currency-to-account-detail-asset.js";

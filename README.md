@@ -69,6 +69,17 @@ destination permanent branch (`ENV_STABLE_PATHS` in `scripts/release/lib.mjs`):
 
 Current path: `packages/common/src/utils/factories`.
 
+Showcase (from MISC #2439 / enrich-trade-currency factory):
+
+| Branch | Behavior |
+| --- | --- |
+| `develop` | Maps `couponPercent`, `paymentFrequency`, `bidSpread`, `askSpread` (dev swagger) |
+| `main` | Those four assignments are commented out (prod types) |
+
+After release prepare syncs **prod** swagger, `restoreEnvStablePaths("origin/main")`
+puts the prod factory back. After backmerge syncs **dev** swagger,
+`restoreEnvStablePaths("origin/develop")` puts the develop factory back.
+
 Demo fixtures under `libs/api-client/fixtures/{dev,prod}/` diverge on purpose.
 Set `TYPINGS_FETCH=1` to curl live Stablehouse swagger (requires network; full
 NSwag pipeline is not vendored here — generator is the lightweight demo twin of
