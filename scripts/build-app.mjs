@@ -8,7 +8,7 @@ if (app !== "web") {
 }
 
 const repositoryRoot = fileURLToPath(new URL("../", import.meta.url));
-const appDirectory = resolve(repositoryRoot, "apps", app);
+const appDirectory = resolve(repositoryRoot, "packages", app);
 const outputDirectory = resolve(appDirectory, "dist");
 const moduleUrl = pathToFileURL(resolve(appDirectory, "src/render.js"));
 const { renderPage } = await import(moduleUrl);

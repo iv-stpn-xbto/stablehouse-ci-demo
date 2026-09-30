@@ -1,0 +1,125 @@
+# Release guards — naming rules, changeset scope (PR→develop only), and
+# unique-branch enforcement for release/hotfix/backmerge heads.
+#
+# pull_request: runs against open PRs into develop/main.
+# workflow_dispatch: chained from prepare-release / complete-release-and-backmerge
+# with github.token (GITHUB_TOKEN cannot retrigger push/PR workflows). Scripts
+# come from github.sha of the dispatched ref — never from an untrusted PR merge
+# commit when using a write token.
+name: Release guards
+
+on:
+  pull_request:
+    branches: [develop, main]
+  workflow_dispatch:
+    inputs:
+      head_branch:
+        description: Ephemeral head branch (release/X.X.X, hotfix/X.X.X, or backmerge/X.X.X)
+        required: true
+        type: string
+      base_branch:
+        description: Target base branch (main or develop)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  rules:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out trusted scripts
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: .nvmrc
+
+      - name: Fetch PR head for diff
+        if: github.event_name == 'pull_request'
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git"
+          git fetch --no-tags --depth=1 origin "${HEAD_SHA}"
+          git remote set-url origin "https://github.com/${{ github.repository }}.git"
+
+      - name: Validate changeset scope
+        if: github.event_name == 'pull_request' && github.base_ref == 'develop'
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: >-
+          node scripts/release/changesets.mjs check
+          "${{ github.event.pull_request.base.sha }}"
+          "${{ github.event.pull_request.head.sha }}"
+
+      - name: Enforce release and hotfix naming into main
+        if: >-
+          (github.event_name == 'pull_request' && github.base_ref == 'main') ||
+          (github.event_name == 'workflow_dispatch' && inputs.base_branch == 'main')
+        env:
+          HEAD_BRANCH: ${{ github.event_name == 'pull_request' && github.head_ref || inputs.head_branch }}
+        run: |
+          if [[ ! "$HEAD_BRANCH" =~ ^(release|hotfix)/[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Pull requests to main must be release/X.X.X or hotfix/X.X.X."
+            exit 1
+          fi
+
+      - name: Enforce backmerge naming into develop
+        if: >-
+          (github.event_name == 'pull_request' &&
+           github.base_ref == 'develop' &&
+           startsWith(github.head_ref, 'backmerge/')) ||
+          (github.event_name == 'workflow_dispatch' &&
+           inputs.base_branch == 'develop' &&
+           startsWith(inputs.head_branch, 'backmerge/'))
+        env:
+          HEAD_BRANCH: ${{ github.event_name == 'pull_request' && github.head_ref || inputs.head_branch }}
+        run: |
+          if [[ ! "$HEAD_BRANCH" =~ ^backmerge/[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Backmerge pull requests must use backmerge/X.X.X."
+            exit 1
+          fi
+
+  unique-branch:
+    needs: [rules]
+    if: >-
+      (github.event_name == 'pull_request' &&
+       github.event.pull_request.head.repo.full_name == github.repository &&
+       (startsWith(github.head_ref, 'release/') ||
+        startsWith(github.head_ref, 'hotfix/') ||
+        startsWith(github.head_ref, 'backmerge/'))) ||
+      (github.event_name == 'workflow_dispatch' &&
+       (startsWith(inputs.head_branch, 'release/') ||
+        startsWith(inputs.head_branch, 'hotfix/') ||
+        startsWith(inputs.head_branch, 'backmerge/')))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Check out trusted scripts
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: .nvmrc
+
+      - name: Keep a single release/hotfix/backmerge branch
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          HEAD_BRANCH: ${{ github.event_name == 'pull_request' && github.head_ref || inputs.head_branch }}
+          BASE_BRANCH: ${{ github.event_name == 'pull_request' && github.base_ref || inputs.base_branch }}
+        run: node scripts/release/release.mjs enforce-uniqueness

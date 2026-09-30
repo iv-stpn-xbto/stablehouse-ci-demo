@@ -1,0 +1,11 @@
+{
+  "name": "@stablehouse-dev/universal-components",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": "./src/index.js",
+  "scripts": {
+    "build": "node --check src/index.js",
+    "storybook": "node -e \"console.log('universal-components stub')\""
+  }
+}

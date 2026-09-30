@@ -1,0 +1,25 @@
+{
+  "name": "@xbto/api-client",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "license": "ISC",
+  "description": "Typescript API interfaces generated using Swagger TS Client",
+  "exports": "./src/api.js",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "node --check src/api.js",
+    "typings": "node ./scripts/typings.mjs",
+    "typings:local": "yarn typings --url=http://localhost:5000/swagger/v1/swagger.json --skipFetchSwagger=true",
+    "typings:develop": "yarn typings:dev",
+    "typings:dev": "yarn typings --url=https://api.sbleho-dev.com/swagger/v1/swagger.json",
+    "typings:dev:skip": "yarn typings --url=https://api.sbleho-dev.com/swagger/v1/swagger.json --skipFetchSwagger=true",
+    "typings:dev-mainnet": "yarn typings --url=https://api.sh-dev1-mainnet.com/swagger/v1/swagger.json",
+    "typings:staging": "yarn typings --url=https://api.maisonstable.io/swagger/v1/swagger.json",
+    "typings:staging-mainnet": "yarn typings --url=https://api.maisonstable.io/swagger/v1/swagger.json",
+    "typings:canary": "yarn typings --url=https://api.maisonstable.io/swagger/v1/swagger.json",
+    "typings:prod": "yarn typings --url=https://api.maisonstable.io/swagger/v1/swagger.json"
+  }
+}

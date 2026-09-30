@@ -1,0 +1,113 @@
+# Complete release and backmerge — tags a merged release/hotfix, then opens
+# backmerge/X.X.X into develop.
+#
+# Auth: github.token only (no RELEASE_BOT_TOKEN). GITHUB_TOKEN pushes do not
+# retrigger push/PR workflows, so after a successful backmerge prepare this job:
+#   1. Runs yarn test:release-ci in the same run (smoke verification)
+#   2. Chains release-status + release-guards via workflow_dispatch
+# Residual: org/repo must allow Actions to create PRs; required status checks
+# on backmerge PRs may need to accept the dispatched release-guards run.
+name: Complete release and backmerge
+
+on:
+  pull_request:
+    branches: [main]
+    types: [closed]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: complete-release-and-backmerge
+  cancel-in-progress: false
+
+permissions:
+  actions: write
+  contents: write
+  pull-requests: write
+
+jobs:
+  complete-release:
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.merged == true &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      (startsWith(github.event.pull_request.head.ref, 'release/') ||
+       startsWith(github.event.pull_request.head.ref, 'hotfix/'))
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.complete.outputs.version }}
+      tag: ${{ steps.complete.outputs.tag }}
+      kind: ${{ steps.complete.outputs.kind }}
+    env:
+      HEAD_BRANCH: ${{ github.event.pull_request.head.ref }}
+      MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+    steps:
+      - name: Check out merged main
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
+          persist-credentials: false
+
+      - name: Tag release and delete ephemeral branch
+        id: complete
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/release/release.mjs complete
+
+  backmerge:
+    needs: [complete-release]
+    if: >-
+      always() &&
+      (github.event_name == 'workflow_dispatch' ||
+       github.event_name == 'push' ||
+       (github.event_name == 'pull_request' &&
+        github.event.pull_request.merged == true &&
+        github.event.pull_request.head.repo.full_name == github.repository))
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          token: ${{ github.token }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: .nvmrc
+          cache: yarn
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install dependencies
+        env:
+          YARN_NPM_AUTH_TOKEN: ${{ secrets.YARN_NPM_AUTH_TOKEN }}
+        run: yarn install --immutable
+
+      - name: Create or rebase backmerge/X.X.X
+        id: backmerge
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          YARN_NPM_AUTH_TOKEN: ${{ secrets.YARN_NPM_AUTH_TOKEN }}
+        run: node scripts/release/release.mjs backmerge
+
+      - name: Same-run release CI smoke
+        if: steps.backmerge.outputs.skipped != 'true'
+        run: yarn test:release-ci
+
+      - name: Chain follow-up workflows
+        if: steps.backmerge.outputs.skipped != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_BRANCH: ${{ steps.backmerge.outputs.branch }}
+        run: |
+          set -euo pipefail
+          # pull_request events expose ref_name as "<n>/merge"; always dispatch
+          # against main (the production base this workflow is tied to).
+          gh workflow run release-status.yaml --ref develop
+          gh workflow run release-guards.yaml \
+            --ref main \
+            -f head_branch="${HEAD_BRANCH}" \
+            -f base_branch=develop

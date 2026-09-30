@@ -1,0 +1,43 @@
+# Product CI for develop — demo equivalent of MISC web-app-develop-ci.
+# Omits AWS/ECR deploy; runs static verification only.
+name: Web-app Develop CI
+
+on:
+  push:
+    branches:
+      - develop
+    paths-ignore:
+      - '.github/workflows/web-app-develop-ci.yaml'
+      - '.github/workflows/web-app-staging-ci.yaml'
+      - '.github/workflows/web-app-prod-ci.yaml'
+  pull_request:
+    branches: [develop, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Build and verify - develop
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: .nvmrc
+          cache: yarn
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install dependencies
+        env:
+          YARN_NPM_AUTH_TOKEN: ${{ secrets.YARN_NPM_AUTH_TOKEN }}
+        run: yarn install --immutable
+
+      - name: Static checks
+        run: yarn static:checks
