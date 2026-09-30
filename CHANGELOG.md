@@ -1,5 +1,21 @@
 # frontend
 
+## 1.3.0
+
+### Minor Changes
+
+- Release from develop without pending changesets.
+
+### Commits
+
+- `58f1920` ci: floor release bumps at minor; keep hotfixes patch-only
+- `03a2e30` ci: run prepare-release only on develop
+- `53f4735` fix: drop per-env swagger fixture folders
+- `e86bf23` feat: showcase env-stable enrich factory (dev vs prod)
+- `e8a7746` ci: restore env-stable paths after API sync
+- `59cc7b7` ci: match MISC frontend release contract end-to-end
+- `1f5e586` ci: align release CI with MISC consolidated scripts
+
 ## 1.2.2
 
 ### Patch Changes
