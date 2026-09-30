@@ -80,10 +80,9 @@ After release prepare syncs **prod** swagger, `restoreEnvStablePaths("origin/mai
 puts the prod factory back. After backmerge syncs **dev** swagger,
 `restoreEnvStablePaths("origin/develop")` puts the develop factory back.
 
-Demo fixtures under `libs/api-client/fixtures/{dev,prod}/` diverge on purpose.
-Set `TYPINGS_FETCH=1` to curl live Stablehouse swagger (requires network; full
-NSwag pipeline is not vendored here — generator is the lightweight demo twin of
-MISC's `typings.mjs` interface).
+API typings match MISC: `typings:dev` / `typings:prod` fetch the env swagger URL
+and overwrite the same `libs/api-client/swagger.json` (+ curated / generated
+client) in place — no per-env fixture folders.
 
 ## Author changes
 
@@ -141,6 +140,6 @@ node scripts/release/release.mjs status
 ### Remaining demo-only deltas vs MISC
 
 - Product `web-app-*-ci` workflows skip AWS OIDC/ECR deploy.
-- `@xbto/api-client` typings use a lightweight generator + fixtures instead of
-  NSwag + .NET (same yarn script names and `syncApiClient` commit contract).
+- `@xbto/api-client` typings use a lightweight generator (same yarn script names
+  and in-place `swagger.json` overwrite) instead of NSwag + .NET.
 - No `tools/*` / `packages/mobile` workspaces.

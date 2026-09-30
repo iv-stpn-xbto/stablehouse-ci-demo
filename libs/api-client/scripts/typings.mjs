@@ -1,14 +1,12 @@
 #!/usr/bin/env node
 /**
- * Demo typings pipeline mirroring libs/api-client in the front-end monorepo:
- * fetch swagger → curate (drop deprecated paths / *Decimal props) → generate src/api.js.
- *
- * Uses the same typings:dev / typings:prod URLs as production. When those hosts
- * are unreachable (local CI demo), falls back to committed fixtures under
- * fixtures/{dev,prod}/swagger.json so release sync still produces a real diff.
+ * Typings pipeline mirroring MISC libs/api-client:
+ * fetch swagger from --url → curate → generate src/api.js into the same
+ * libs/api-client tree (single swagger.json / swagger-curated.json / src/api.js).
+ * No per-env fixture folders — typings:dev and typings:prod overwrite in place.
  */
 import { spawnSync } from "node:child_process";
-import { copyFileSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -16,17 +14,6 @@ const root = fileURLToPath(new URL("..", import.meta.url));
 const SWAGGER = join(root, "swagger.json");
 const CURATED = join(root, "swagger-curated.json");
 const API_OUT = join(root, "src", "api.js");
-
-const FIXTURE_BY_URL = Object.freeze({
-  "https://api.sbleho-dev.com/swagger/v1/swagger.json": join(
-    root,
-    "fixtures/dev/swagger.json",
-  ),
-  "https://api.maisonstable.io/swagger/v1/swagger.json": join(
-    root,
-    "fixtures/prod/swagger.json",
-  ),
-});
 
 function parseArgs(argv) {
   let url;
@@ -62,35 +49,15 @@ function parseArgs(argv) {
 }
 
 function fetchSwagger(url) {
-  const fixture = FIXTURE_BY_URL[url];
-  // Demo fixtures win by default so release/backmerge produce a small, reliable
-  // prod↔dev diff without committing the full Stablehouse OpenAPI document.
-  // Set TYPINGS_FETCH=1 to curl the live URL instead (MISC-identical path).
-  if (fixture && process.env.TYPINGS_FETCH !== "1") {
-    console.info(
-      `Using demo fixture for ${url} → ${fixture.replace(`${root}/`, "")}`,
-    );
-    copyFileSync(fixture, SWAGGER);
-    return;
-  }
-
-  const curl = spawnSync("curl", ["-fsSL", url, "-o", SWAGGER], {
+  const curl = spawnSync("curl", ["-fsSL", "-X", "GET", url, "-o", SWAGGER], {
     encoding: "utf8",
   });
-  if (curl.status === 0) {
-    console.info(`Fetched swagger from ${url}`);
-    return;
-  }
-  if (fixture) {
-    console.info(
-      `Fetch failed for ${url}; falling back to demo fixture ${fixture.replace(`${root}/`, "")}`,
+  if (curl.status !== 0) {
+    throw new Error(
+      `Failed to fetch swagger from ${url}.\n${curl.stderr || curl.stdout || ""}`,
     );
-    copyFileSync(fixture, SWAGGER);
-    return;
   }
-  throw new Error(
-    `Failed to fetch swagger from ${url}.\n${curl.stderr || curl.stdout || ""}`,
-  );
+  console.info(`Fetched swagger from ${url}`);
 }
 
 function deleteDeprecationsInPaths(paths) {

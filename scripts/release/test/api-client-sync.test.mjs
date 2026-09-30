@@ -1,41 +1,94 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("../../..", import.meta.url));
 const apiRoot = join(root, "libs/api-client");
+const swaggerPath = join(apiRoot, "swagger.json");
 
-function runTypings(script) {
-  const result = spawnSync("yarn", ["workspace", "@xbto/api-client", script], {
-    cwd: root,
-    encoding: "utf8",
-  });
+function runTypings(args) {
+  const result = spawnSync(
+    "yarn",
+    ["workspace", "@xbto/api-client", "typings", ...args],
+    { cwd: root, encoding: "utf8" },
+  );
   assert.equal(
     result.status,
     0,
-    `${script} failed:\n${result.stdout}\n${result.stderr}`,
+    `typings failed:\n${result.stdout}\n${result.stderr}`,
   );
 }
 
-test("typings:dev and typings:prod regenerate divergent api clients", () => {
-  runTypings("typings:dev");
-  assert.equal(existsSync(join(apiRoot, "swagger.json")), true);
-  assert.equal(existsSync(join(apiRoot, "swagger-curated.json")), true);
-  const devApi = readFileSync(join(apiRoot, "src/api.js"), "utf8");
-  assert.match(devApi, /v1-dev/);
-  assert.match(devApi, /GetDevOnly/);
-  assert.doesNotMatch(devApi, /GetProdOnly/);
-  assert.doesNotMatch(devApi, /LegacyRemoved/);
-  assert.doesNotMatch(devApi, /balanceDecimal/);
+test("typings regenerates in-place from committed swagger (no fixture folders)", () => {
+  const previous = readFileSync(swaggerPath, "utf8");
+  try {
+    writeFileSync(
+      swaggerPath,
+      `${JSON.stringify(
+        {
+          openapi: "3.0.1",
+          info: { title: "Stablehouse Public", version: "v1-test" },
+          paths: {
+            "/v1/account/tag/get": {
+              get: {
+                operationId: "GetTag",
+                summary: "Get account tag",
+                responses: { 200: { description: "OK" } },
+              },
+            },
+            "/v1/legacy/removed": {
+              get: {
+                operationId: "LegacyRemoved",
+                deprecated: true,
+                responses: { 200: { description: "OK" } },
+              },
+            },
+          },
+          components: {
+            schemas: {
+              AccountTag: {
+                type: "object",
+                properties: {
+                  tag: { type: "string" },
+                  balanceDecimal: { type: "string" },
+                },
+              },
+            },
+          },
+        },
+        null,
+        2,
+      )}\n`,
+      "utf8",
+    );
 
-  runTypings("typings:prod");
-  const prodApi = readFileSync(join(apiRoot, "src/api.js"), "utf8");
-  assert.match(prodApi, /v1-prod/);
-  assert.match(prodApi, /GetProdOnly/);
-  assert.doesNotMatch(prodApi, /GetDevOnly/);
+    runTypings([
+      "--url=https://api.sbleho-dev.com/swagger/v1/swagger.json",
+      "--skipFetchSwagger=true",
+    ]);
 
-  assert.notEqual(devApi, prodApi);
+    assert.equal(existsSync(join(apiRoot, "swagger-curated.json")), true);
+    assert.equal(existsSync(join(apiRoot, "src/api.js")), true);
+    assert.equal(existsSync(join(apiRoot, "fixtures")), false);
+
+    const api = readFileSync(join(apiRoot, "src/api.js"), "utf8");
+    assert.match(api, /v1-test/);
+    assert.match(api, /GetTag/);
+    assert.doesNotMatch(api, /LegacyRemoved/);
+    assert.doesNotMatch(api, /balanceDecimal/);
+
+    const curated = JSON.parse(
+      readFileSync(join(apiRoot, "swagger-curated.json"), "utf8"),
+    );
+    assert.equal(curated.paths["/v1/legacy/removed"], undefined);
+  } finally {
+    writeFileSync(swaggerPath, previous, "utf8");
+    runTypings([
+      "--url=https://api.sbleho-dev.com/swagger/v1/swagger.json",
+      "--skipFetchSwagger=true",
+    ]);
+  }
 });
