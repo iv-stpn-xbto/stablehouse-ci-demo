@@ -1,13 +1,11 @@
 /**
- * Env-stable demo factories — restored from the destination permanent branch
- * after API client swagger sync (see ENV_STABLE_PATHS in scripts/release/lib.mjs).
+ * Env-stable factories (demo) — main / prod tip.
+ *
+ * Prod enrich factory comments out couponPercent, paymentFrequency, bidSpread,
+ * askSpread (MISC #2439). Release restore pulls this tree from origin/main.
  */
-export const ENV_STABLE_MARKER = "main";
 
-export function createDemoAccount(overrides = {}) {
-  return {
-    id: "acct_demo",
-    environment: ENV_STABLE_MARKER,
-    ...overrides,
-  };
-}
+export {
+  ENV_STABLE_MARKER,
+  mapTradableCurrenciesToEnrichedAccountDetailAssets,
+} from "./enrich-trade-currency-to-account-detail-asset.js";
