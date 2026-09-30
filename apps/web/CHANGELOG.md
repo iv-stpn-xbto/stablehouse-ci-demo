@@ -1,5 +1,11 @@
 # web
 
+## 1.2.2
+
+### Patch Changes
+
+- Prepare release only on develop pushes (do not run on main).
+
 ## 1.2.1
 
 ### Patch Changes
