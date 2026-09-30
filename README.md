@@ -43,7 +43,12 @@ feature PR (+ frontend changeset)
 
 ### Release / hotfix / backmerge
 
-Same as MISC:
+Same as MISC, with this demo's bump policy:
+
+| Path | Bump |
+| --- | --- |
+| `yarn hotfix` | always **patch** from `origin/main` |
+| `release/X.X.X` (prepare) | at least **minor** (patch changesets and chore diffs are floored up; major stays major) |
 
 1. **Prepare release** — `node scripts/release/release.mjs prepare` then
    `typings:prod` sync commit when dirty; same-run smoke; chain status + guards.

@@ -259,6 +259,25 @@ export function highestBump(types) {
   return null;
 }
 
+const BUMP_RANK = Object.freeze({ patch: 0, minor: 1, major: 2 });
+
+/**
+ * Raise a bump to at least `minimum` (release floor is minor; hotfixes stay patch).
+ * @param {"patch"|"minor"|"major"|null|undefined} bump
+ * @param {"patch"|"minor"|"major"} [minimum="minor"]
+ * @returns {"patch"|"minor"|"major"}
+ */
+export function atLeastBump(bump, minimum = "minor") {
+  if (!(minimum in BUMP_RANK)) {
+    throw new TypeError(`Unknown minimum bump: ${minimum}`);
+  }
+  if (!bump) return minimum;
+  if (!(bump in BUMP_RANK)) {
+    throw new TypeError(`Unknown bump type: ${bump}`);
+  }
+  return BUMP_RANK[bump] < BUMP_RANK[minimum] ? minimum : bump;
+}
+
 export function versionedBranch(kind, version) {
   if (!Object.values(BRANCH_KINDS).includes(kind)) {
     throw new TypeError(`Unknown branch kind: ${kind}`);
@@ -513,9 +532,10 @@ export async function readAppVersion(manifestPath = APP_MANIFEST) {
 }
 
 /**
- * Next release version for the current working tree.
- * Uses the highest pending frontend changeset bump, or patch when there are
- * commit diffs but no changesets (chores / CI-driven releases).
+ * Next **release** version for the current working tree.
+ * Uses the highest pending frontend changeset bump, floored at **minor**
+ * (patch changesets and chore diffs still produce a minor). Hotfixes use a
+ * separate path and always patch-bump from main.
  *
  * Does NOT invoke `changeset version` — workspace packages stay unversioned;
  * only root package.json (frontend) is bumped by prepare-release / hotfix.
@@ -526,9 +546,10 @@ export async function computeNextVersion({
 } = {}) {
   const current = await readAppVersion();
   const bumps = await pendingFrontendBumps();
-  const bump = highestBump(bumps);
+  const requested = highestBump(bumps);
 
-  if (bump) {
+  if (requested) {
+    const bump = atLeastBump(requested, "minor");
     return {
       current,
       version: bumpVersion(current, bump),
@@ -540,9 +561,9 @@ export async function computeNextVersion({
   if (hasCommitDiffs || !requireChanges) {
     return {
       current,
-      version: bumpVersion(current, "patch"),
-      bump: "patch",
-      source: "patch-fallback",
+      version: bumpVersion(current, "minor"),
+      bump: "minor",
+      source: "minor-fallback",
     };
   }
 

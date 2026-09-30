@@ -85,7 +85,7 @@ async function applyVersionDirect(plan, commits) {
   const changelog = await readChangelog();
   const section = buildVersionSection({
     version: plan.version,
-    bump: plan.bump ?? "patch",
+    bump: plan.bump ?? "minor",
     summaryLines:
       plan.source === "changesets"
         ? [`Bump from pending frontend changesets (${plan.bump}).`]

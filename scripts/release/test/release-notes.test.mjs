@@ -81,9 +81,9 @@ test("releasePullBody surfaces the changelog section", () => {
   const body = releasePullBody({
     version: "4.1.6",
     branch: "release/4.1.6",
-    source: "patch-fallback",
+    source: "minor-fallback",
     changelogSection:
-      "## 4.1.6\n\n### Patch Changes\n\n- hello\n\n### Commits\n\n- `abcd123` chore: follow up\n",
+      "## 4.1.6\n\n### Minor Changes\n\n- hello\n\n### Commits\n\n- `abcd123` chore: follow up\n",
   });
   assert.match(body, /### Changelog/);
   assert.match(body, /## 4\.1\.6/);
