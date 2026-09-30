@@ -59,6 +59,16 @@ Same as MISC:
 | `release/X.X.X` | `yarn workspace @xbto/api-client typings:prod` | `Sync API client from prod swagger` |
 | `backmerge/X.X.X` | `yarn workspace @xbto/api-client typings:dev` | `Sync API client from dev swagger` |
 
+Immediately after sync, prepare restores **env-stable paths** from the
+destination permanent branch (`ENV_STABLE_PATHS` in `scripts/release/lib.mjs`):
+
+| Flow | Restore source | Commit (when dirty) |
+| --- | --- | --- |
+| Release | `origin/main` | `Restore env-stable paths from main` |
+| Backmerge | `origin/develop` | `Restore env-stable paths from develop` |
+
+Current path: `packages/common/src/utils/factories`.
+
 Demo fixtures under `libs/api-client/fixtures/{dev,prod}/` diverge on purpose.
 Set `TYPINGS_FETCH=1` to curl live Stablehouse swagger (requires network; full
 NSwag pipeline is not vendored here — generator is the lightweight demo twin of

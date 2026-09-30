@@ -30,6 +30,7 @@ import {
   releaseBranch,
   releasePullBody,
   runGit,
+  restoreEnvStablePaths,
   syncApiClient,
   upsertChangelog,
   upsertPull,
@@ -162,6 +163,8 @@ export async function prepareRelease() {
 
   // Prod API client sync — separate commit after version bump.
   await syncApiClient("prod");
+  // Destination (main) wins for env-stable trees after swagger sync.
+  await restoreEnvStablePaths("origin/main");
 
   const branch = releaseBranch(plan.version);
   runGit(["branch", "-f", branch, "HEAD"]);
@@ -240,6 +243,8 @@ export async function prepareBackmerge() {
 
   // Dev API client sync — commit only when swagger differs.
   await syncApiClient("dev");
+  // Destination (develop) wins for env-stable trees after swagger sync.
+  await restoreEnvStablePaths("origin/develop");
 
   runGit(["push", "--force", "origin", `HEAD:refs/heads/${branch}`]);
 
@@ -258,7 +263,8 @@ export async function prepareBackmerge() {
     "",
     "Carries production releases and hotfixes from `main` back to `develop`.",
     "This branch is force-updated to the tip of `main` whenever main moves,",
-    "and may include a `Sync API client from dev swagger` commit.",
+    "and may include a `Sync API client from dev swagger` commit and a",
+    "`Restore env-stable paths from develop` commit (see `ENV_STABLE_PATHS`).",
     "",
     "**Human merge only** — merge commit or fast-forward; **never squash**.",
     "Do not auto-merge.",

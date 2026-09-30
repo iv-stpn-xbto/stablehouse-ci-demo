@@ -455,6 +455,8 @@ export function releasePullBody({ version, branch, source, changelogSection }) {
     changelogSection?.trim() || `_No changelog section for ${version}._`,
     "",
     "Built from latest `main` with `develop` merged in, then versioned.",
+    "May include a `Sync API client from prod swagger` commit and a",
+    "`Restore env-stable paths from main` commit (see `ENV_STABLE_PATHS`).",
     `After merge: tag \`frontend@${version}\` and open \`backmerge/${version}\` into develop (human merge; never squash).`,
     "<!-- stablehouse-release-summary:end -->",
   ].join("\n");
@@ -671,6 +673,127 @@ export async function syncApiClient(environment) {
   configureBotIdentity();
   runGit(["commit", "-m", config.message]);
   console.log(`Committed: ${config.message}`);
+  return true;
+}
+
+// --- env-stable paths ---
+/**
+ * Trees restored from the destination permanent branch after API sync so
+ * env-specific adaptations (e.g. factories) are not wiped by a blind merge.
+ * Edit this list in one place when more paths need the same treatment.
+ */
+export const ENV_STABLE_PATHS = Object.freeze([
+  "packages/common/src/utils/factories",
+]);
+
+/** Allowed restore sources — permanent bases only, as origin refs. */
+export const ENV_STABLE_SOURCE_REFS = Object.freeze([
+  "origin/main",
+  "origin/develop",
+]);
+
+/**
+ * Refuse any source other than origin/main or origin/develop.
+ * @param {unknown} sourceRef
+ * @returns {"origin/main" | "origin/develop"}
+ */
+export function assertEnvStableSourceRef(sourceRef) {
+  if (
+    typeof sourceRef !== "string" ||
+    !ENV_STABLE_SOURCE_REFS.includes(sourceRef)
+  ) {
+    throw new TypeError(
+      `ENV_STABLE sourceRef must be origin/main or origin/develop (got ${JSON.stringify(sourceRef)})`,
+    );
+  }
+  return /** @type {"origin/main" | "origin/develop"} */ (sourceRef);
+}
+
+/**
+ * Validate env-stable paths: non-empty relative paths, no `..`, no absolute.
+ * @param {readonly string[]} [paths]
+ * @returns {readonly string[]}
+ */
+export function assertEnvStablePaths(paths = ENV_STABLE_PATHS) {
+  if (!Array.isArray(paths) || paths.length === 0) {
+    throw new TypeError("ENV_STABLE_PATHS must be a non-empty array of paths");
+  }
+  for (const path of paths) {
+    if (typeof path !== "string" || path.length === 0) {
+      throw new TypeError(
+        `ENV_STABLE path must be a non-empty string (got ${JSON.stringify(path)})`,
+      );
+    }
+    if (
+      path.startsWith("/") ||
+      path.includes("\\") ||
+      path.split("/").some((segment) => segment === ".." || segment === "")
+    ) {
+      throw new TypeError(
+        `ENV_STABLE path must be a relative path without .. (got ${JSON.stringify(path)})`,
+      );
+    }
+  }
+  return paths;
+}
+
+/**
+ * Commit message for an env-stable restore from the given origin ref.
+ * @param {"origin/main" | "origin/develop"} sourceRef
+ */
+export function envStableRestoreCommitMessage(sourceRef) {
+  const ref = assertEnvStableSourceRef(sourceRef);
+  const branch = ref === "origin/main" ? "main" : "develop";
+  return `Restore env-stable paths from ${branch}`;
+}
+
+/**
+ * Assert each path exists as a tree or blob on sourceRef (fail loudly).
+ * @param {"origin/main" | "origin/develop"} sourceRef
+ * @param {readonly string[]} paths
+ */
+function assertEnvStablePathsExistOnRef(sourceRef, paths) {
+  for (const path of paths) {
+    const result = runGit(["cat-file", "-e", `${sourceRef}:${path}`], {
+      allowFailure: true,
+    });
+    if (result.status !== 0) {
+      throw new Error(
+        `ENV_STABLE path missing on ${sourceRef}: ${path}`,
+      );
+    }
+  }
+}
+
+/**
+ * Restore ENV_STABLE_PATHS from the destination permanent branch after API sync.
+ * Destination wins for those trees — no merge attempt. Commits only when dirty.
+ *
+ * @param {"origin/main" | "origin/develop"} sourceRef
+ * @returns {Promise<boolean>} true when a restore commit was created
+ */
+export async function restoreEnvStablePaths(sourceRef) {
+  const ref = assertEnvStableSourceRef(sourceRef);
+  const paths = assertEnvStablePaths();
+  assertEnvStablePathsExistOnRef(ref, paths);
+
+  runGit(["checkout", ref, "--", ...paths]);
+  runGit(["add", "--", ...paths]);
+
+  const staged = gitOutput(["diff", "--cached", "--name-only"], {
+    allowFailure: true,
+  });
+  if (!staged) {
+    console.log(
+      `Env-stable paths already match ${ref}; no restore commit.`,
+    );
+    return false;
+  }
+
+  const message = envStableRestoreCommitMessage(ref);
+  configureBotIdentity();
+  runGit(["commit", "-m", message]);
+  console.log(`Committed: ${message}`);
   return true;
 }
 
